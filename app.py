@@ -13,110 +13,198 @@ import requests
 
 # Configure page
 st.set_page_config(
-    page_title="Financial ML App",
-    page_icon="📈",
+    page_title="Multi-Stock ML Analyst",
+    page_icon="💹",
     layout="wide"
 )
 
-# Load Lottie animations
-def load_lottieurl(url: str):
+# Enhanced Lottie animations
+LOTTIE_URLS = {
+    "loading": "https://assets1.lottiefiles.com/packages/lf20_5njp3vgg.json",
+    "success": "https://assets1.lottiefiles.com/packages/lf20_auwiessx.json",
+    "finance": "https://assets1.lottiefiles.com/packages/lf20_5tkzkblw.json"
+}
+
+def load_lottie(url: str):
     try:
         r = requests.get(url)
         return r.json() if r.status_code == 200 else None
     except:
         return None
 
-lottie_loading = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_raiw2hpe.json")
-lottie_success = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_auwiessx.json")
-
 # Custom CSS
 st.markdown("""
 <style>
-    .main {background-color: #F5F5F5;}
-    h1 {color: #003366;}
-    .stButton>button {background-color: #004488; color: white; transition: all 0.3s;}
+    .main {background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);}
+    h1 {color: #2b5876; border-bottom: 3px solid #4e4376;}
+    .stButton>button {
+        background: linear-gradient(45deg, #4e4376, #2b5876);
+        color: white;
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
     .stButton>button:hover {transform: scale(1.05);}
-    .stSuccess {background-color: #DFF2BF;}
+    .stock-card {border-radius: 10px; padding: 20px; margin: 10px 0; 
+                background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
 </style>
 """, unsafe_allow_html=True)
 
 def main():
-    # Welcome Interface with animation
-    st.title("Financial Machine Learning Application")
-    st.markdown("---")
-    
-    if lottie_loading:
-        st_lottie(lottie_loading, speed=1, height=200, key="main_anim")
-    else:
-        st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", 
-                width=300, use_container_width=True)
-    
-    # Initialize session state with reset capability
-    if 'data' not in st.session_state:
-        st.session_state.data = None
+    # Animated header
+    with st.container():
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.title("📊 Multi-Stock ML Analyst")
+            st.markdown("---")
+        with col2:
+            finance_anim = load_lottie(LOTTIE_URLS["finance"])
+            if finance_anim:
+                st_lottie(finance_anim, height=150, key="header_anim")
+
+    # Initialize session state
+    if 'stocks' not in st.session_state:
+        st.session_state.stocks = {}
     if 'model' not in st.session_state:
         st.session_state.model = None
-    if 'steps' not in st.session_state:
-        st.session_state.steps = {'loaded': False, 'processed': False}
 
-    # Sidebar Configuration with reset button
+    # Sidebar Configuration
     with st.sidebar:
-        st.header("Data Configuration")
-        data_source = st.radio("Select Data Source:", 
-                             ["Yahoo Finance", "Upload Dataset"],
+        st.header("⚙️ Configuration")
+        data_source = st.radio("Data Source:", 
+                             ["Yahoo Finance", "Upload CSV"],
                              key="data_source")
         
-        if st.button("🔄 Reset All"):
+        if st.button("🔄 Reset All", help="Clear all loaded data"):
             st.session_state.clear()
             st.experimental_rerun()
-        
+
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Enter Stock Ticker (e.g., AAPL):", "AAPL",
-                                 help="Enter valid Yahoo Finance ticker symbol")
+            st.subheader("Stock Selection")
+            tickers = st.text_input("Enter Tickers (comma separated):", 
+                                  "AAPL, MSFT, GOOGL",
+                                  help="E.g., AAPL, MSFT, TSLA")
             start_date = st.date_input("Start Date:", pd.to_datetime('2020-01-01'))
             end_date = st.date_input("End Date:")
         else:
-            uploaded_file = st.file_uploader("Upload CSV File:", type=["csv"],
-                                           help="Upload your financial dataset in CSV format")
-    
-    # Step 1: Load Data with enhanced error handling
-    st.header("Step 1: Load Data")
-    if st.button("Load Data", key="load_data"):
-        try:
-            with st.spinner('Loading data...'):
-                if data_source == "Yahoo Finance":
-                    df = yf.download(ticker, start=start_date, end=end_date)
-                    if df.empty:
-                        st.error(f"No data found for {ticker} in selected date range")
-                        return
-                    df = df.reset_index()
-                else:
-                    if not uploaded_file:
-                        st.error("Please upload a CSV file first")
-                        return
-                    df = pd.read_csv(uploaded_file)
-                    if df.empty:
-                        st.error("Uploaded file is empty")
-                        return
-                
-                st.session_state.data = df
-                st.session_state.steps['loaded'] = True
-                
-                if lottie_success:
-                    st_lottie(lottie_success, speed=1, height=100, key="load_success")
-                st.success("Data loaded successfully!")
-                
-                st.write("### Data Preview")
-                st.dataframe(df.head(), use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-            st.session_state.steps['loaded'] = False
+            uploaded_files = st.file_uploader("Upload CSV Files:", 
+                                            type=["csv"],
+                                            accept_multiple_files=True)
 
-    # Rest of the code remains similar but add these fixes:
-    # 1. Add key parameters to all buttons
-    # 2. Use use_container_width instead of use_column_width
-    # 3. Add proper error handling for all steps
+    # Data loading section
+    with st.expander("📥 Step 1: Load Data", expanded=True):
+        if st.button("🚀 Load Data", key="load_data"):
+            try:
+                with st.spinner('Fetching data...'):
+                    if data_source == "Yahoo Finance":
+                        ticker_list = [t.strip() for t in tickers.split(',')]
+                        df = yf.download(ticker_list, start=start_date, end=end_date)
+                        
+                        if df.empty:
+                            st.error("No data found for these tickers")
+                            return
+                            
+                        # Process multi-index data
+                        for ticker in ticker_list:
+                            if ('Close', ticker) in df.columns:
+                                st.session_state.stocks[ticker] = {
+                                    'data': df.xs(ticker, axis=1, level=1).reset_index()
+                                }
+                                
+                    else:
+                        for uploaded_file in uploaded_files:
+                            df = pd.read_csv(uploaded_file)
+                            ticker = uploaded_file.name.split('.')[0]
+                            st.session_state.stocks[ticker] = {'data': df}
+                    
+                    if lottie_success:
+                        st_lottie(load_lottie(LOTTIE_URLS["success"]), 
+                                height=100, key="load_success")
+                    st.success(f"Loaded {len(st.session_state.stocks)} stocks!")
+                    
+                    # Display loaded stocks
+                    cols = st.columns(3)
+                    for idx, (ticker, data) in enumerate(st.session_state.stocks.items()):
+                        with cols[idx % 3]:
+                            with st.container():
+                                st.markdown(f"""
+                                <div class='stock-card'>
+                                    <h4>{ticker}</h4>
+                                    <p>Rows: {len(data['data'])}</p>
+                                    <p>Columns: {len(data['data'].columns)}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Error loading data: {str(e)}")
+
+    # Only show processing if data exists
+    if st.session_state.stocks:
+        # Data preprocessing
+        with st.expander("🧹 Step 2: Preprocess Data"):
+            if st.button("✨ Clean All Data"):
+                with st.spinner('Cleaning...'):
+                    for ticker in st.session_state.stocks:
+                        df = st.session_state.stocks[ticker]['data']
+                        df = df.dropna()
+                        st.session_state.stocks[ticker]['data'] = df
+                    st.success("Data cleaned across all stocks!")
+
+        # Feature engineering
+        with st.expander("⚡ Step 3: Create Features"):
+            if st.button("🔧 Generate Features"):
+                with st.spinner('Creating features...'):
+                    for ticker in st.session_state.stocks:
+                        df = st.session_state.stocks[ticker]['data']
+                        df['SMA_20'] = df['Close'].rolling(20).mean()
+                        df['SMA_50'] = df['Close'].rolling(50).mean()
+                        df['Returns'] = df['Close'].pct_change()
+                        st.session_state.stocks[ticker]['data'] = df.dropna()
+                    st.success("Features created for all stocks!")
+
+        # Model training
+        with st.expander("🤖 Step 4: Train Model"):
+            if st.button("🎓 Train Model"):
+                try:
+                    # Combine all stock data
+                    combined_df = pd.concat(
+                        [stock['data'] for stock in st.session_state.stocks.values()]
+                    )
+                    
+                    # Prepare features
+                    X = combined_df[['SMA_20', 'SMA_50']]
+                    y = combined_df['Close']
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, shuffle=False)
+                    
+                    # Train model
+                    model = LinearRegression()
+                    model.fit(X_train, y_train)
+                    st.session_state.model = model
+                    
+                    # Show metrics
+                    y_pred = model.predict(X_test)
+                    st.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
+                    st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+                    
+                    # Success animation
+                    st_lottie(load_lottie(LOTTIE_URLS["success"]), height=100)
+                    st.success("Model trained on all stocks!")
+
+                except Exception as e:
+                    st.error(f"Training failed: {str(e)}")
+
+        # Prediction visualization
+        if st.session_state.model:
+            with st.expander("🔮 Step 5: Predictions"):
+                selected_ticker = st.selectbox("Select Stock:", list(st.session_state.stocks.keys()))
+                
+                df = st.session_state.stocks[selected_ticker]['data']
+                df['Prediction'] = st.session_state.model.predict(df[['SMA_20', 'SMA_50']])
+                
+                fig = px.line(df, x='Date', y=['Close', 'Prediction'],
+                            title=f"{selected_ticker} Predictions",
+                            color_discrete_sequence=['#4e4376', '#2b5876'])
+                st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
