@@ -14,11 +14,12 @@ from datetime import datetime
 # ======================
 # 1. PREMIUM ANIMATIONS
 # ======================
+# ======================
 LOTTIE_ASSETS = {
-    "main": "https://assets1.lottiefiles.com/packages/lf20_mDnmhAgZkb.json",
-    "loading": "https://assets1.lottiefiles.com/packages/lf20_6wutsrox.json",
-    "success": "https://assets1.lottiefiles.com/packages/lf20_jbrw3hq5.json",
-    "chart": "https://assets1.lottiefiles.com/packages/lf20_0skurerf.json"
+    "main": "https://lottie.host/bfd0d47e-6d7a-4504-8f3d-1a60d1d58f3b/5Qx4p3XqQH.json",
+    "loading": "https://lottie.host/8d66c9a5-161c-41d8-8a35-7986d307b9e9/9EiZmAOQEi.json",
+    "success": "https://lottie.host/8c9c5449-0d5a-4b72-8c3d-03a6c3c6d6e5/1XvzZzZz7y.json",
+    "chart": "https://lottie.host/4e127d57-14d2-4d5e-b58a-3a0a8b0a7d3a/4Xm6E6Z6wD.json"
 }
 
 @st.cache_data
