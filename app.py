@@ -118,7 +118,7 @@ def main():
 
         if st.button("🔄 Full Reset", type="primary"):
             st.session_state.clear()
-            st.experimental_rerun()
+            st.rerun()
 
     # ------------------
     # C. Data Loading (Professional Grade)
