@@ -22,14 +22,20 @@ LOTTIE_ASSETS = {
     "chart": "https://lottie.host/4e127d57-14d2-4d5e-b58a-3a0a8b0a7d3a/4Xm6E6Z6wD.json"
 }
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_lottie(url: str):
+    """Enhanced animation loader with error handling"""
     try:
-        r = requests.get(url)
+        if not url.startswith('http'):
+            return None
+        r = requests.get(url, timeout=3)
         return r.json() if r.status_code == 200 else None
-    except:
+    except requests.exceptions.RequestException as e:
+        st.error(f"Animation server error: {str(e)}")
         return None
-
+    except Exception as e:
+        st.error(f"Animation loading failed: {str(e)}")
+        return None
 # ======================
 # 2. LUXURY UI/UX
 # ======================
