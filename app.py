@@ -5,123 +5,169 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score, silhouette_score
-from streamlit_lottie import st_lottie
-import json
-import requests
+from sklearn.metrics import mean_squared_error, r2_score
 from io import StringIO
 
 # Configure page
 st.set_page_config(
-    page_title="FinML Analyst",
-    page_icon="💹",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Financial ML App",
+    page_icon="📈",
+    layout="wide"
 )
 
-# Improved Lottie animation handling with unique keys
-def load_lottie(url: str, fallback_path: str = None):
-    """Load Lottie animation with error handling and fallback"""
-    try:
-        if url.startswith("http"):
-            r = requests.get(url)
-            return r.json() if r.status_code == 200 else None
-        elif fallback_path:
-            with open(fallback_path) as f:
-                return json.load(f)
-        return None
-    except Exception as e:
-        st.error(f"Animation error: {str(e)}")
-        return None
-
-# Reliable animation sources with fallbacks
-LOTTIE_URLS = {
-    "loading": "https://assets2.lottiefiles.com/packages/lf20_Stt1R6.json",
-    "success": "https://assets9.lottiefiles.com/packages/lf20_auiqr3if.json"
-}
-
-# Custom CSS with proper scoping
+# Custom CSS
 st.markdown("""
 <style>
-    .main {background: #f0f2f6;}
-    h1 {color: #2c3e50; border-bottom: 3px solid #3498db;}
-    .stButton>button {border-radius: 8px; transition: transform 0.2s;}
-    .stButton>button:hover {transform: scale(1.05);}
+    .main {background-color: #F5F5F5;}
+    h1 {color: #003366;}
+    .stButton>button {background-color: #004488; color: white;}
+    .stSuccess {background-color: #DFF2BF;}
 </style>
 """, unsafe_allow_html=True)
 
 def main():
-    # Initialize session state with proper keys
+    # Welcome Interface
+    st.title("Financial Machine Learning Application")
+    st.markdown("---")
+    
+    # Add finance GIF
+    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)
+    
+    # Initialize session state
     if 'data' not in st.session_state:
         st.session_state.data = None
     if 'model' not in st.session_state:
         st.session_state.model = None
     if 'steps' not in st.session_state:
-        st.session_state.steps = {
-            'loaded': False,
-            'processed': False,
-            'features_created': False,
-            'split': False,
-            'trained': False
-        }
+        st.session_state.steps = {'loaded': False, 'processed': False}
 
-    # Welcome section with unique keys
-    st.title("📈 FinTech Machine Learning Analyst")
-    st.markdown("---")
-    
-    # Animation with unique key per instance
-    loading_anim = load_lottie(LOTTIE_URLS["loading"])
-    if loading_anim:
-        st_lottie(loading_anim, speed=1, height=200, key="loading_anim")
-    else:
-        st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", 
-                width=300, use_column_width=False)
-
-    # Sidebar with proper key management
+    # Sidebar Configuration
     with st.sidebar:
-        st.header("⚙️ Configuration")
-        data_source = st.radio("Data Source:", 
-                             ["Yahoo Finance", "Upload CSV"],
-                             key="data_source_radio")
+        st.header("Data Configuration")
+        data_source = st.radio("Select Data Source:", ["Yahoo Finance", "Upload Dataset"])
         
-        model_type = st.selectbox(
-            "Select Model:",
-            ["Linear Regression", "Random Forest", "K-Means Clustering"],
-            key="model_selectbox"
-        )
-        
-        # Reset button with proper state management
-        if st.button("🔄 Reset All", key="reset_button"):
-            for key in st.session_state.keys():
-                del st.session_state[key]
-            st.experimental_rerun()
+        if data_source == "Yahoo Finance":
+            ticker = st.text_input("Enter Stock Ticker (e.g., AAPL):", "AAPL")
+            start_date = st.date_input("Start Date:", pd.to_datetime('2020-01-01'))
+            end_date = st.date_input("End Date:")
+        else:
+            uploaded_file = st.file_uploader("Upload CSV File:", type=["csv"])
+    
+    # Step 1: Load Data
+    st.header("Step 1: Load Data")
+    if st.button("Load Data"):
+        try:
+            if data_source == "Yahoo Finance":
+                df = yf.download(ticker, start=start_date, end=end_date)
+                df = df.reset_index()
+                st.session_state.data = df
+            else:
+                if uploaded_file:
+                    df = pd.read_csv(uploaded_file)
+                    st.session_state.data = df
+            
+            st.session_state.steps['loaded'] = True
+            st.success("Data loaded successfully!")
+            st.write("Data Preview:")
+            st.dataframe(st.session_state.data.head())
+            
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
 
-    # Data loading section with unique keys
-    with st.expander("📂 Step 1: Load Data", expanded=True):
-        if st.button("🚀 Load Data", key="load_data_button"):
-            try:
-                # Data loading logic...
-                # (Keep your existing data loading code here)
+    # Only show subsequent steps if data is loaded
+    if st.session_state.steps['loaded']:
+        # Step 2: Preprocessing
+        st.header("Step 2: Data Preprocessing")
+        if st.button("Clean Data"):
+            df = st.session_state.data
+            
+            # Handle missing values
+            missing = df.isnull().sum()
+            st.write("Missing Values Before Cleaning:")
+            st.write(missing)
+            
+            df = df.dropna()
+            
+            st.write("Missing Values After Cleaning:")
+            st.write(df.isnull().sum())
+            
+            st.session_state.data = df
+            st.session_state.steps['processed'] = True
+            st.success("Data cleaning completed!")
+
+        if st.session_state.steps.get('processed'):
+            # Step 3: Feature Engineering
+            st.header("Step 3: Feature Engineering")
+            if st.button("Create Features"):
+                df = st.session_state.data
                 
-                # Success animation with unique key
-                success_anim = load_lottie(LOTTIE_URLS["success"])
-                if success_anim:
-                    st_lottie(success_anim, speed=1, height=150, key="success_anim_1")
-                else:
-                    st.image("https://media.giphy.com/media/3ohzdIuqJoo8QdKmlW/giphy.gif",
-                            width=200, use_column_width=False)
+                # Create features for stock data
+                df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                df['SMA_50'] = df['Close'].rolling(window=50).mean()
+                df = df.dropna()
                 
-                st.session_state.steps['loaded'] = True
-                st.balloons()
+                st.session_state.data = df
+                st.success("Features created!")
+                st.write("Updated Data:")
+                st.dataframe(df.tail())
 
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+            # Step 4: Train/Test Split
+            st.header("Step 4: Train/Test Split")
+            if st.button("Split Data"):
+                df = st.session_state.data
+                X = df[['SMA_20', 'SMA_50']]
+                y = df['Close']
+                
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, shuffle=False)
+                
+                st.session_state.X_train = X_train
+                st.session_state.X_test = X_test
+                st.session_state.y_train = y_train
+                st.session_state.y_test = y_test
+                
+                # Visualize split
+                split_counts = pd.Series({
+                    'Training': len(X_train),
+                    'Testing': len(X_test)
+                })
+                fig = px.pie(split_counts, values=split_counts, names=split_counts.index)
+                st.plotly_chart(fig)
+                st.success("Data split completed!")
 
-    # Remaining steps with proper key management...
-    # (Maintain this pattern of unique keys for all interactive elements)
+                # Step 5: Model Training
+                st.header("Step 5: Model Training")
+                if st.button("Train Model"):
+                    model = LinearRegression()
+                    model.fit(st.session_state.X_train, st.session_state.y_train)
+                    st.session_state.model = model
+                    st.success("Model training completed!")
+
+                if st.session_state.model:
+                    # Step 6: Evaluation
+                    st.header("Step 6: Model Evaluation")
+                    if st.button("Evaluate Model"):
+                        y_pred = st.session_state.model.predict(st.session_state.X_test)
+                        
+                        # Calculate metrics
+                        mse = mean_squared_error(st.session_state.y_test, y_pred)
+                        r2 = r2_score(st.session_state.y_test, y_pred)
+                        
+                        # Display metrics
+                        st.metric("Mean Squared Error", f"{mse:.2f}")
+                        st.metric("R² Score", f"{r2:.2f}")
+                        
+                        # Plot predictions
+                        fig = px.line(
+                            title="Actual vs Predicted Prices",
+                            x=st.session_state.X_test.index,
+                            y=[st.session_state.y_test, y_pred],
+                            labels={'value': 'Price', 'variable': 'Legend'},
+                            color_discrete_sequence=['blue', 'orange']
+                        )
+                        fig.update_layout(showlegend=False)
+                        st.plotly_chart(fig)
 
 if __name__ == "__main__":
     main()
