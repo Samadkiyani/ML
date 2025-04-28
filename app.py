@@ -1,4 +1,4 @@
-# app.py (AAPL-Specific Professional Edition)
+# app.py (100% Working Version)
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -66,9 +66,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ======================
-# 3. CORE FUNCTIONALITY
+# 3. SESSION STATE MANAGEMENT
+# ======================
+def init_session_state():
+    """Initialize all required session state variables"""
+    defaults = {
+        'aapl_data': None,
+        'model': None,
+        'steps': {
+            'loaded': False,
+            'processed': False,
+            'trained': False
+        }
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+# ======================
+# 4. CORE FUNCTIONALITY
 # ======================
 def main():
+    # Initialize session state first
+    init_session_state()
+    
     # ------------------
     # A. Hero Section
     # ------------------
@@ -80,14 +102,6 @@ def main():
             st.markdown("---")
         with col2:
             st.image("https://1000logos.net/wp-content/uploads/2016/10/Apple-Logo-1977.png", width=150)
-
-    # Initialize session state
-    if 'aapl_data' not in st.session_state:
-        st.session_state.aapl_data = None
-    if 'model' not in st.session_state:
-        st.session_state.model = None
-    if 'steps' not in st.session_state:
-        st.session_state.steps = {'loaded': False, 'processed': False, 'trained': False}
 
     # ------------------
     # B. Data Loading
@@ -139,28 +153,31 @@ def main():
 
     # ------------------
     # D. Feature Engineering
-   # Feature Engineering
-# Feature Engineering
-if st.session_state.steps['processed']:
-    with st.expander("⚡ STEP 3: Create Advanced Features", expanded=True):
-        if st.button("🔧 Generate Trading Signals"):
-            with st.spinner('Calculating market indicators...'):
-                st_lottie(load_lottie(LOTTIE_ASSETS["loading"]), height=80)
-                
-                df = st.session_state.aapl_data
-                df['SMA_20'] = df['Close'].rolling(20).mean()
-                df['EMA_12'] = df['Close'].ewm(span=12).mean()
-                df['EMA_26'] = df['Close'].ewm(span=26).mean()
-                df['MACD'] = df['EMA_12'] - df['EMA_26']
-                
-                # Fixed RSI calculation
-                df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
-                                   df['Close'].diff().clip(upper=0).abs().rolling(14).mean())))
-                
-                st.session_state.aapl_data = df.dropna()
-                
-                st.success("Professional trading features created")
-                st_lottie(load_lottie(LOTTIE_ASSETS["success"]), height=80)
+    # ------------------
+    if st.session_state.steps['processed']:
+        with st.expander("⚡ STEP 3: Create Advanced Features", expanded=True):
+            if st.button("🔧 Generate Trading Signals"):
+                with st.spinner('Calculating market indicators...'):
+                    st_lottie(load_lottie(LOTTIE_ASSETS["loading"]), height=80)
+                    
+                    df = st.session_state.aapl_data
+                    df['SMA_20'] = df['Close'].rolling(20).mean()
+                    df['EMA_12'] = df['Close'].ewm(span=12).mean()
+                    df['EMA_26'] = df['Close'].ewm(span=26).mean()
+                    df['MACD'] = df['EMA_12'] - df['EMA_26']
+                    
+                    # Fixed RSI Calculation
+                    delta = df['Close'].diff()
+                    gain = delta.clip(lower=0)
+                    loss = -delta.clip(upper=0)
+                    avg_gain = gain.rolling(14).mean()
+                    avg_loss = loss.rolling(14).mean()
+                    rs = avg_gain / avg_loss
+                    df['RSI'] = 100 - (100 / (1 + rs))
+                    
+                    st.session_state.aapl_data = df.dropna()
+                    st.success("Professional trading features created")
+                    st_lottie(load_lottie(LOTTIE_ASSETS["success"]), height=80)
 
     # ------------------
     # E. Model Training
