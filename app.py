@@ -7,7 +7,8 @@ import plotly.express as px
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-from io import StringIO
+from streamlit_lottie import st_lottie
+import requests
 
 # Configure page
 st.set_page_config(
@@ -16,7 +17,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Enhanced Professional CSS with Animations
+# Load Lottie animations
+def load_lottieurl(url: str):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+lottie_loading = load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_raiw2hpe.json")
+lottie_success = load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_au03ianj.json")
+lottie_finance = load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_2znx3l3i.json")
+
+# Custom CSS with animations
 st.markdown("""
 <style>
     @keyframes fadeIn {
@@ -29,14 +41,8 @@ st.markdown("""
         to { transform: translateX(0); opacity: 1; }
     }
     
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.02); }
-        100% { transform: scale(1); }
-    }
-    
     .main {background-color: #F5F5F5;}
-    h1 {color: #003366; animation: fadeIn 1s ease-out;}
+    h1, h2, h3 {color: #003366; animation: fadeIn 1s ease-out;}
     .stButton>button {
         background-color: #004488; 
         color: white; 
@@ -47,59 +53,29 @@ st.markdown("""
         transform: scale(1.05);
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
-    .stSuccess {
-        background-color: #DFF2BF; 
-        animation: slideInRight 0.5s ease-out;
-        border-left: 4px solid #4CAF50;
-    }
-    .dataframe {
-        animation: fadeIn 0.8s ease-out;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    .plotly-chart {
-        animation: fadeIn 1s ease-out;
-        border-radius: 12px;
-        overflow: hidden;
+    .stSuccess {background-color: #DFF2BF; animation: slideInRight 0.5s ease-out;}
+    .dataframe {animation: fadeIn 0.8s ease-out; box-shadow: 0 2px 8px rgba(0,0,0,0.1);}
+    .plotly-chart {animation: fadeIn 1s ease-out;}
+    .stAlert {animation: fadeIn 0.6s ease-out;}
+    .section-card {
+        padding: 2rem;
+        margin: 1rem 0;
+        border-radius: 15px;
         background: white;
-        padding: 15px;
-    }
-    [data-testid="stImage"] {
-        animation: pulse 2s ease-in-out infinite;
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    .stAlert {
-        animation: fadeIn 0.6s ease-out;
-    }
-    .section-header {
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         animation: fadeIn 0.8s ease-out;
-        border-left: 4px solid #004488;
-        padding-left: 1rem;
-        margin: 2rem 0;
-    }
-    .metric-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        animation: fadeIn 0.8s ease-out;
-    }
-    .metric-card h3 {
-        color: #004488;
-        margin-bottom: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def main():
-    # Welcome Interface with Enhanced Animations
-    st.title("Financial Machine Learning Application")
-    st.markdown("---")
-    
-    # Animated Finance GIF
-    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)
+    # Welcome Interface
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st_lottie(lottie_finance, height=300, key="welcome")
+    with col2:
+        st.title("Financial Machine Learning Application")
+        st.markdown("---")
     
     # Initialize session state
     if 'data' not in st.session_state:
@@ -111,170 +87,182 @@ def main():
 
     # Sidebar Configuration
     with st.sidebar:
-        st.markdown('<div class="section-header">', unsafe_allow_html=True)
-        st.header("Data Configuration")
+        st.header("⚙️ Data Configuration")
         data_source = st.radio("Select Data Source:", ["Yahoo Finance", "Upload Dataset"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Enter Stock Ticker (e.g., AAPL):", "AAPL")
-            start_date = st.date_input("Start Date:", pd.to_datetime('2020-01-01'))
-            end_date = st.date_input("End Date:")
+            ticker = st.text_input("📈 Enter Stock Ticker (e.g., AAPL):", "AAPL")
+            start_date = st.date_input("📅 Start Date:", pd.to_datetime('2020-01-01'))
+            end_date = st.date_input("📅 End Date:")
         else:
-            uploaded_file = st.file_uploader("Upload CSV File:", type=["csv"])
+            uploaded_file = st.file_uploader("📤 Upload CSV File:", type=["csv"])
+    
+    # Step 1: Load Data
+    with st.container():
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.header("📥 Step 1: Load Data")
+        if st.button("🚀 Load Data"):
+            with st.spinner("Loading data..."):
+                try:
+                    if data_source == "Yahoo Finance":
+                        df = yf.download(ticker, start=start_date, end=end_date)
+                        df = df.reset_index()
+                        st.session_state.data = df
+                    else:
+                        if uploaded_file:
+                            df = pd.read_csv(uploaded_file)
+                            st.session_state.data = df
+                    
+                    st.session_state.steps['loaded'] = True
+                    st.success("✅ Data loaded successfully!")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st_lottie(lottie_success, height=100, key="success1")
+                    with col2:
+                        st.write("Data Preview:")
+                        st.dataframe(st.session_state.data.head().style.set_properties(**{
+                            'background-color': '#f8f9fa',
+                            'color': '#003366',
+                            'border': '1px solid #dee2e6'
+                        }))
+                    
+                except Exception as e:
+                    st.error(f"❌ Error loading data: {str(e)}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Step 1: Load Data
-    st.markdown('<div class="section-header">', unsafe_allow_html=True)
-    st.header("Step 1: Load Data")
-    if st.button("Load Data"):
-        try:
-            if data_source == "Yahoo Finance":
-                df = yf.download(ticker, start=start_date, end=end_date)
-                df = df.reset_index()
-                st.session_state.data = df
-            else:
-                if uploaded_file:
-                    df = pd.read_csv(uploaded_file)
-                    st.session_state.data = df
-            
-            st.session_state.steps['loaded'] = True
-            st.success("Data loaded successfully!")
-            st.write("Data Preview:")
-            st.dataframe(st.session_state.data.head().style.set_properties(**{
-                'background-color': '#f8f9fa',
-                'color': '#003366',
-                'border': '1px solid #dee2e6'
-            }))
-            
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Only show subsequent steps if data is loaded
+    # Subsequent steps
     if st.session_state.steps['loaded']:
         # Step 2: Preprocessing
-        st.markdown('<div class="section-header">', unsafe_allow_html=True)
-        st.header("Step 2: Data Preprocessing")
-        if st.button("Clean Data"):
-            df = st.session_state.data
-            
-            # Handle missing values
-            missing = df.isnull().sum()
-            st.write("Missing Values Before Cleaning:")
-            st.write(missing)
-            
-            df = df.dropna()
-            
-            st.write("Missing Values After Cleaning:")
-            st.write(df.isnull().sum())
-            
-            st.session_state.data = df
-            st.session_state.steps['processed'] = True
-            st.success("Data cleaning completed!")
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            st.header("🧹 Step 2: Data Preprocessing")
+            if st.button("✨ Clean Data"):
+                with st.spinner("Cleaning data..."):
+                    df = st.session_state.data
+                    
+                    # Handle missing values
+                    missing = df.isnull().sum()
+                    st.write("Missing Values Before Cleaning:")
+                    st.dataframe(missing)
+                    
+                    df = df.dropna()
+                    
+                    st.write("Missing Values After Cleaning:")
+                    st.dataframe(df.isnull().sum())
+                    
+                    st.session_state.data = df
+                    st.session_state.steps['processed'] = True
+                    st.success("✅ Data cleaning completed!")
+                    st_lottie(lottie_success, height=100, key="success2")
+            st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.steps.get('processed'):
             # Step 3: Feature Engineering
-            st.markdown('<div class="section-header">', unsafe_allow_html=True)
-            st.header("Step 3: Feature Engineering")
-            if st.button("Create Features"):
-                df = st.session_state.data
-                
-                # Create features for stock data
-                df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                df['SMA_50'] = df['Close'].rolling(window=50).mean()
-                df = df.dropna()
-                
-                st.session_state.data = df
-                st.success("Features created!")
-                st.write("Updated Data:")
-                st.dataframe(df.tail().style.set_properties(**{
-                    'background-color': '#f8f9fa',
-                    'color': '#003366',
-                    'border': '1px solid #dee2e6'
-                }))
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container():
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.header("⚙️ Step 3: Feature Engineering")
+                if st.button("🔧 Create Features"):
+                    with st.spinner("Creating features..."):
+                        df = st.session_state.data
+                        
+                        # Create features
+                        df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+                        df = df.dropna()
+                        
+                        st.session_state.data = df
+                        st.success("✅ Features created!")
+                        st_lottie(lottie_success, height=100, key="success3")
+                        st.write("Updated Data:")
+                        st.dataframe(df.tail().style.set_properties(**{
+                            'background-color': '#f8f9fa',
+                            'color': '#003366',
+                            'border': '1px solid #dee2e6'
+                        }))
+                st.markdown('</div>', unsafe_allow_html=True)
 
             # Step 4: Train/Test Split
-            st.markdown('<div class="section-header">', unsafe_allow_html=True)
-            st.header("Step 4: Train/Test Split")
-            if st.button("Split Data"):
-                df = st.session_state.data
-                X = df[['SMA_20', 'SMA_50']]
-                y = df['Close']
-                
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, shuffle=False)
-                
-                st.session_state.X_train = X_train
-                st.session_state.X_test = X_test
-                st.session_state.y_train = y_train
-                st.session_state.y_test = y_test
-                
-                # Visualize split
-                split_counts = pd.Series({
-                    'Training': len(X_train),
-                    'Testing': len(X_test)
-                })
-                fig = px.pie(split_counts, values=split_counts, names=split_counts.index)
-                st.plotly_chart(fig)
-                st.success("Data split completed!")
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container():
+                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                st.header("📊 Step 4: Train/Test Split")
+                if st.button("✂️ Split Data"):
+                    with st.spinner("Splitting data..."):
+                        df = st.session_state.data
+                        X = df[['SMA_20', 'SMA_50']]
+                        y = df['Close']
+                        
+                        X_train, X_test, y_train, y_test = train_test_split(
+                            X, y, test_size=0.2, shuffle=False)
+                        
+                        st.session_state.X_train = X_train
+                        st.session_state.X_test = X_test
+                        st.session_state.y_train = y_train
+                        st.session_state.y_test = y_test
+                        
+                        # Visualize split
+                        split_counts = pd.Series({
+                            'Training': len(X_train),
+                            'Testing': len(X_test)
+                        })
+                        fig = px.pie(split_counts, values=split_counts, names=split_counts.index,
+                                    color_discrete_sequence=['#004488', '#4CAF50'])
+                        st.plotly_chart(fig)
+                        st.success("✅ Data split completed!")
+                        st_lottie(lottie_success, height=100, key="success4")
+                st.markdown('</div>', unsafe_allow_html=True)
 
                 # Step 5: Model Training
-                st.markdown('<div class="section-header">', unsafe_allow_html=True)
-# Streamlit components here (st.header, st.button, etc.)
-                st.markdown('</div>', unsafe_allow_html=True)
-
-            
-                if st.button("Train Model"):
-                    model = LinearRegression()
-                    model.fit(st.session_state.X_train, st.session_state.y_train)
-                    st.session_state.model = model
-                    st.success("Model training completed!")
-                st.markdown('</div>', unsafe_allow_html=True)
+                with st.container():
+                    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                    st.header("🤖 Step 5: Model Training")
+                    if st.button("🎓 Train Model"):
+                        with st.spinner("Training model..."):
+                            model = LinearRegression()
+                            model.fit(st.session_state.X_train, st.session_state.y_train)
+                            st.session_state.model = model
+                            st.success("✅ Model training completed!")
+                            st_lottie(lottie_success, height=100, key="success5")
+                    st.markdown('</div>', unsafe_allow_html=True)
 
                 if st.session_state.model:
                     # Step 6: Evaluation
-                    st.markdown('<div class="section-header">', unsafe_allow_html=True)
-                    st.header("Step 6: Model Evaluation")
-                    if st.button("Evaluate Model"):
-                        y_pred = st.session_state.model.predict(st.session_state.X_test)
-                        
-                        # Calculate metrics
-                        mse = mean_squared_error(st.session_state.y_test, y_pred)
-                        r2 = r2_score(st.session_state.y_test, y_pred)
-                        
-                        # Display metrics in animated cards
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown('<div class="metric-card">'
-                                       '<h3>Mean Squared Error</h3>'
-                                       f'<h2 style="color:#004488;">{mse:.2f}</h2>'
-                                       '</div>', unsafe_allow_html=True)
-                        with col2:
-                            st.markdown('<div class="metric-card">'
-                                       '<h3>R² Score</h3>'
-                                       f'<h2 style="color:#004488;">{r2:.2f}</h2>'
-                                       '</div>', unsafe_allow_html=True)
-                        
-                        # Plot predictions with enhanced style
-                        fig = px.line(
-                            title="Actual vs Predicted Prices",
-                            x=st.session_state.X_test.index,
-                            y=[st.session_state.y_test, y_pred],
-                            labels={'value': 'Price', 'variable': 'Legend'},
-                            color_discrete_sequence=['#004488', '#4CAF50']
-                        )
-                        fig.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            xaxis_title="Date",
-                            yaxis_title="Price",
-                            hovermode="x unified"
-                        )
-                        st.plotly_chart(fig)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    with st.container():
+                        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                        st.header("📈 Step 6: Model Evaluation")
+                        if st.button("📝 Evaluate Model"):
+                            with st.spinner("Evaluating model..."):
+                                y_pred = st.session_state.model.predict(st.session_state.X_test)
+                                
+                                # Metrics
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown("""
+                                    <div style='background: #f8f9fa; padding: 2rem; border-radius: 10px;'>
+                                        <h3 style='color: #004488;'>Model Metrics</h3>
+                                        <h4 style='color: #4CAF50;'>MSE: {mse:.2f}</h4>
+                                        <h4 style='color: #4CAF50;'>R²: {r2:.2f}</h4>
+                                    </div>
+                                    """.format(mse=mean_squared_error(st.session_state.y_test, y_pred),
+                                    unsafe_allow_html=True)
+                                
+                                # Plot
+                                fig = px.line(
+                                    title="Actual vs Predicted Prices",
+                                    x=st.session_state.X_test.index,
+                                    y=[st.session_state.y_test, y_pred],
+                                    labels={'value': 'Price', 'variable': 'Legend'},
+                                    color_discrete_sequence=['#004488', '#4CAF50']
+                                )
+                                fig.update_layout(
+                                    plot_bgcolor='rgba(0,0,0,0)',
+                                    paper_bgcolor='rgba(0,0,0,0)',
+                                    xaxis_title="Date",
+                                    yaxis_title="Price",
+                                    hovermode="x unified"
+                                )
+                                st.plotly_chart(fig)
+                                st_lottie(lottie_success, height=100, key="success6")
+                        st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
