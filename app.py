@@ -12,9 +12,10 @@ import requests
 
 # Configure page
 st.set_page_config(
-    page_title="Financial ML Pro",
+    page_title="FinVision Pro",
     page_icon="💹",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Load Lottie animations safely
@@ -32,10 +33,11 @@ def load_lottie(url: str):
 ANIMATIONS = {
     "main": "https://assets1.lottiefiles.com/packages/lf20_ysrn2iwp.json",
     "success": "https://assets1.lottiefiles.com/packages/lf20_au03ianj.json",
-    "loading": "https://assets1.lottiefiles.com/packages/lf20_raiw2hpe.json"
+    "loading": "https://assets1.lottiefiles.com/packages/lf20_raiw2hpe.json",
+    "chart": "https://assets1.lottiefiles.com/packages/lf20_ujvx3qxj.json"
 }
 
-# Custom CSS with smooth animations
+# Custom CSS with modern design
 st.markdown("""
 <style>
     @keyframes fadeIn {
@@ -44,25 +46,31 @@ st.markdown("""
     }
 
     .main {background: #f8fafc;}
-    h1 {color: #1e3a8a; animation: fadeIn 1s;}
+    h1 {color: #1e3a8a; animation: fadeIn 1s; font-family: 'Arial Rounded MT Bold'}
     .stButton>button {
-        background: #3b82f6 !important;
+        background: #4f46e5 !important;
         color: white !important;
         transition: all 0.3s ease !important;
+        border-radius: 10px !important;
     }
     .stButton>button:hover {
         transform: scale(1.05);
-        box-shadow: 0 4px 6px rgba(59,130,246,0.3) !important;
+        box-shadow: 0 4px 6px rgba(79,70,229,0.3) !important;
     }
     .section {
         background: white;
-        border-radius: 15px;
+        border-radius: 20px;
         padding: 2rem;
         margin: 1.5rem 0;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         animation: fadeIn 0.8s;
     }
-    .success-anim {animation: fadeIn 0.8s;}
+    .metric-card {
+        background: #f1f5f9;
+        border-radius: 15px;
+        padding: 1.5rem;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -70,7 +78,7 @@ def show_animation(url: str, height=200):
     """Safe animation display with fallback"""
     anim = load_lottie(url)
     if anim:
-        st_lottie(anim, height=height)
+        st_lottie(anim, height=height, key=f"anim_{url}")
     else:
         st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)
 
@@ -85,17 +93,19 @@ def main():
     if 'steps' not in st.session_state:
         st.session_state.steps = {'loaded': False, 'processed': False}
 
-    # --- Header Section ---
+    # --- Animated Header ---
     with st.container():
         col1, col2 = st.columns([1, 2])
         with col1:
             show_animation(ANIMATIONS["main"], height=300)
         with col2:
-            st.title("Financial ML Analyzer")
+            st.title("FinVision Pro")
             st.markdown("---")
+            st.caption("AI-Powered Financial Analysis Platform")
 
     # --- Sidebar Configuration ---
     with st.sidebar:
+        show_animation(ANIMATIONS["chart"], height=150)
         st.header("⚙️ Configuration")
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
@@ -111,7 +121,7 @@ def main():
         st.markdown('<div class="section">', unsafe_allow_html=True)
         st.header("📥 Step 1: Load Data")
         
-        if st.button("🚀 Load Data"):
+        if st.button("🚀 Load Data", key="load_btn"):
             try:
                 with st.spinner("Loading data..."):
                     show_animation(ANIMATIONS["loading"], height=100)
@@ -141,7 +151,7 @@ def main():
             st.markdown('<div class="section">', unsafe_allow_html=True)
             st.header("🧹 Step 2: Clean Data")
             
-            if st.button("✨ Clean Data"):
+            if st.button("✨ Clean Data", key="clean_btn"):
                 with st.spinner("Cleaning..."):
                     df = st.session_state.data.dropna()
                     st.session_state.data = df
@@ -158,7 +168,7 @@ def main():
                 st.markdown('<div class="section">', unsafe_allow_html=True)
                 st.header("⚙️ Step 3: Feature Engineering")
                 
-                if st.button("🔧 Generate Features"):
+                if st.button("🔧 Generate Features", key="feature_btn"):
                     df = st.session_state.data
                     df['SMA_20'] = df['Close'].rolling(20).mean()
                     df['SMA_50'] = df['Close'].rolling(50).mean()
@@ -172,9 +182,9 @@ def main():
             # Model Training & Evaluation
             with st.container():
                 st.markdown('<div class="section">', unsafe_allow_html=True)
-                st.header("🤖 Step 4: Model Training")
+                st.header("🤖 Step 4: Model Analysis")
                 
-                if st.button("🎓 Train Model"):
+                if st.button("🎓 Run Analysis", key="model_btn"):
                     df = st.session_state.data
                     X = df[['SMA_20', 'SMA_50']]
                     y = df['Close']
@@ -185,23 +195,59 @@ def main():
                     model = LinearRegression().fit(X_train, y_train)
                     st.session_state.model = model
                     
-                    st.success("✅ Model trained!")
-                    show_animation(ANIMATIONS["success"], height=100)
-                    
-                    # Evaluation
+                    # Generate predictions
                     y_pred = model.predict(X_test)
+                    
+                    # Create comparison dataframe
+                    comparison_df = pd.DataFrame({
+                        'Date': X_test.index,
+                        'Actual': y_test,
+                        'Predicted': y_pred
+                    }).melt(id_vars='Date', var_name='Type', value_name='Price')
+
+                    # Show metrics in cards
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.metric("MSE", f"{mean_squared_error(y_test, y_pred):.2f}")
-                    with col2:
-                        st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+                        st.markdown("""
+                        <div class="metric-card">
+                            <h3>📉 MSE</h3>
+                            <h2>{mse:.2f}</h2>
+                        </div>
+                        """.format(mse=mean_squared_error(y_test, y_pred)), unsafe_allow_html=True)
                     
+                    with col2:
+                        st.markdown("""
+                        <div class="metric-card">
+                            <h3>📈 R² Score</h3>
+                            <h2>{r2:.2f}</h2>
+                        </div>
+                        """.format(r2=r2_score(y_test, y_pred)), unsafe_allow_html=True)
+
+                    # Create interactive plot
                     fig = px.line(
-                        x=X_test.index, y=[y_test, y_pred],
-                        labels={'value': 'Price', 'variable': 'Legend'},
-                        color_discrete_sequence=['#3b82f6', '#ef4444']
+                        comparison_df,
+                        x='Date',
+                        y='Price',
+                        color='Type',
+                        color_discrete_sequence=['#4f46e5', '#ef4444'],
+                        title="Actual vs Predicted Prices",
+                        labels={'Price': 'USD Value'},
+                        height=500
                     )
-                    st.plotly_chart(fig)
+                    fig.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        hovermode='x unified',
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.success("✅ Analysis complete!")
+                    show_animation(ANIMATIONS["success"], height=100)
                 st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
