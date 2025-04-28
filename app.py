@@ -139,24 +139,24 @@ def main():
 
     # ------------------
     # D. Feature Engineering
-    # ------------------
-    if st.session_state.steps['processed']:
-        with st.expander("⚡ STEP 3: Create Advanced Features", expanded=True):
-            if st.button("🔧 Generate Trading Signals"):
-                with st.spinner('Calculating market indicators...'):
-                    st_lottie(load_lottie(LOTTIE_ASSETS["loading"]), height=80)
-                    
-                    df = st.session_state.aapl_data
-                    df['SMA_20'] = df['Close'].rolling(20).mean()
-                    df['EMA_12'] = df['Close'].ewm(span=12).mean()
-                    df['EMA_26'] = df['Close'].ewm(span=26).mean()
-                    df['MACD'] = df['EMA_12'] - df['EMA_26']
-                    df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
-                                           df['Close'].diff().clip(upper=0).abs().rolling(14).mean()))
-                    st.session_state.aapl_data = df.dropna()
-                    
-                    st.success("Professional trading features created")
-                    st_lottie(load_lottie(LOTTIE_ASSETS["success"]), height=80)
+   # Feature Engineering
+if st.session_state.steps['processed']:
+    with st.expander("⚡ STEP 3: Create Advanced Features", expanded=True):
+        if st.button("🔧 Generate Trading Signals"):
+            with st.spinner('Calculating market indicators...'):
+                st_lottie(load_lottie(LOTTIE_ASSETS["loading"]), height=80)
+                
+                df = st.session_state.aapl_data
+                df['SMA_20'] = df['Close'].rolling(20).mean()
+                df['EMA_12'] = df['Close'].ewm(span=12).mean()
+                df['EMA_26'] = df['Close'].ewm(span=26).mean()
+                df['MACD'] = df['EMA_12'] - df['EMA_26']
+                df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
+                                   df['Close'].diff().clip(upper=0).abs().rolling(14).mean()))
+                st.session_state.aapl_data = df.dropna()
+                
+                st.success("Professional trading features created")
+                st_lottie(load_lottie(LOTTIE_ASSETS["success"]), height=80)
 
     # ------------------
     # E. Model Training
