@@ -223,8 +223,10 @@ def main():
 
                 # Step 5: Model Training
                 st.markdown('<div class="section-header">', unsafe_allow_html=True)
+# Streamlit components here (st.header, st.button, etc.)
+                st.markdown('</div>', unsafe_allow_html=True)
 
-                st.header("Step 5: Model Training")
+            
                 if st.button("Train Model"):
                     model = LinearRegression()
                     model.fit(st.session_state.X_train, st.session_state.y_train)
