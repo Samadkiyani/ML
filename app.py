@@ -7,186 +7,167 @@ import plotly.express as px
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-from streamlit_lottie import st_lottie
-import requests
-from datetime import datetime
+from io import StringIO
 
-# ======================
-# 1. ANIMATION SETTINGS
-# ======================
-LOTTIE_URLS = {
-    "main": "https://lottie.host/bfd0d47e-6d7a-4504-8f3d-1a60d1d58f3b/5Qx4p3XqQH.json",
-    "loading": "https://lottie.host/8d66c9a5-161c-41d8-8a35-7986d307b9e9/9EiZmAOQEi.json",
-    "success": "https://lottie.host/8c9c5449-0d5a-4b72-8c3d-03a6c3c6d6e5/1XvzZzZz7y.json",
-    "chart": "https://lottie.host/4e127d57-14d2-4d5e-b58a-3a0a8b0a7d3a/4Xm6E6Z6wD.json"
-}
-
-@st.cache_data
-def load_lottie(url: str):
-    try:
-        r = requests.get(url, timeout=3)
-        return r.json() if r.status_code == 200 else None
-    except:
-        return None
-
-# ======================
-# 2. APP CONFIGURATION
-# ======================
+# Configure page
 st.set_page_config(
-    page_title="AAPL Stock Analyst",
-    page_icon="🍎",
+    page_title="Financial ML App",
+    page_icon="📈",
     layout="wide"
 )
 
+# Custom CSS
 st.markdown("""
 <style>
-    .main {background: #000000;}
-    h1 {color: #ffffff; border-bottom: 3px solid #3498db;}
-    .stButton>button {
-        background: #3498db !important;
-        color: white !important;
-        border-radius: 25px;
-        padding: 12px 24px;
-        transition: transform 0.3s;
-    }
-    .stButton>button:hover {transform: scale(1.05);}
-    .step-card {background: rgba(255,255,255,0.1); border-radius: 15px; padding: 1.5rem;}
+    .main {background-color: #F5F5F5;}
+    h1 {color: #003366;}
+    .stButton>button {background-color: #004488; color: white;}
+    .stSuccess {background-color: #DFF2BF;}
 </style>
 """, unsafe_allow_html=True)
 
-# ======================
-# 3. SESSION STATE SETUP
-# ======================
-if 'aapl_data' not in st.session_state:
-    st.session_state.aapl_data = None
-if 'steps' not in st.session_state:
-    st.session_state.steps = {'loaded': False, 'processed': False, 'trained': False}
-
-# ======================
-# 4. MAIN APP FUNCTIONALITY
-# ======================
 def main():
-    st.title("AAPL Stock Analysis Suite")
+    # Welcome Interface
+    st.title("Financial Machine Learning Application")
+    st.markdown("---")
     
-    # ------------------
-    # A. Data Loading Section
-    # ------------------
-    with st.expander("STEP 1: Load AAPL Data", expanded=True):
-        if st.button("🚀 Load AAPL Data"):
-            with st.spinner('Fetching AAPL data from Yahoo Finance...'):
-                try:
-                    # Load animation
-                    st_lottie(load_lottie(LOTTIE_URLS["loading"]), height=100)
-                    
-                    # Fetch AAPL data
-                    df = yf.download("AAPL", start="2020-01-01", end=datetime.today().strftime('%Y-%m-%d'))
-                    df = df.reset_index()
-                    df.columns = [col.strftime('%Y-%m-%d') if isinstance(col, pd.Timestamp) else col for col in df.columns]
-                    
-                    # Store in session state
-                    st.session_state.aapl_data = df
-                    st.session_state.steps['loaded'] = True
-                    
-                    # Show success
-                    st_lottie(load_lottie(LOTTIE_URLS["success"]), height=100)
-                    st.success("AAPL Data Loaded Successfully!")
-                    
-                    # Show data preview
-                    st.dataframe(df.head().style.format({"Close": "${:.2f}"}), use_container_width=True)
-                    
-                except Exception as e:
-                    st.error(f"Failed to load AAPL data: {str(e)}")
+    # Add finance GIF
+    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)
+    
+    # Initialize session state
+    if 'data' not in st.session_state:
+        st.session_state.data = None
+    if 'model' not in st.session_state:
+        st.session_state.model = None
+    if 'steps' not in st.session_state:
+        st.session_state.steps = {'loaded': False, 'processed': False}
 
-    # ------------------
-    # B. Data Processing (Visible after loading)
-    # ------------------
-    if st.session_state.steps['loaded']:
-        with st.expander("STEP 2: Clean Data", expanded=True):
-            if st.button("✨ Clean AAPL Data"):
-                with st.spinner('Cleaning dataset...'):
-                    df = st.session_state.aapl_data
-                    df = df.dropna()
-                    df = df[df['Volume'] > 0]
-                    st.session_state.aapl_data = df
-                    st.session_state.steps['processed'] = True
-                    st.success("Data Cleaning Complete!")
-                    st_lottie(load_lottie(LOTTIE_URLS["success"]), height=80)
-
-    # ------------------
-    # C. Feature Engineering
-    # ------------------
-    if st.session_state.steps['processed']:
-        with st.expander("STEP 3: Create Features", expanded=True):
-            if st.button("🔧 Generate Features"):
-                with st.spinner('Creating technical indicators...'):
-                    df = st.session_state.aapl_data
-                    
-                    # Calculate technical indicators
-                    df['SMA_20'] = df['Close'].rolling(20).mean()
-                    df['SMA_50'] = df['Close'].rolling(50).mean()
-                    
-                    # RSI Calculation (fixed)
-                    delta = df['Close'].diff()
-                    gain = delta.clip(lower=0)
-                    loss = -delta.clip(upper=0)
-                    avg_gain = gain.rolling(14).mean()
-                    avg_loss = loss.rolling(14).mean()
-                    rs = avg_gain / avg_loss
-                    df['RSI'] = 100 - (100 / (1 + rs))
-                    
-                    st.session_state.aapl_data = df.dropna()
-                    st.session_state.steps['trained'] = True
-                    st.success("Feature Engineering Complete!")
-                    st_lottie(load_lottie(LOTTIE_URLS["success"]), height=80)
-
-    # ------------------
-    # D. Model Training
-    # ------------------
-    if st.session_state.steps['trained']:
-        with st.expander("STEP 4: Train Model", expanded=True):
-            if st.button("🎓 Train Prediction Model"):
-                with st.spinner('Training model...'):
-                    df = st.session_state.aapl_data
-                    features = ['SMA_20', 'SMA_50', 'RSI']
-                    target = 'Close'
-                    
-                    X = df[features]
-                    y = df[target]
-                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-                    
-                    model = LinearRegression()
-                    model.fit(X_train, y_train)
-                    
-                    # Store model and show results
-                    st.session_state.model = model
-                    y_pred = model.predict(X_test)
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("RMSE", f"${np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
-                    with col2:
-                        st.metric("R² Score", f"{r2_score(y_test, y_pred)*100:.1f}%")
-                    
-                    st_lottie(load_lottie(LOTTIE_URLS["chart"]), height=150)
-                    st.success("Model Training Complete!")
-
-    # ------------------
-    # E. Predictions
-    # ------------------
-    if st.session_state.get('model'):
-        with st.expander("STEP 5: View Predictions", expanded=True):
-            df = st.session_state.aapl_data.copy()
-            df['Prediction'] = st.session_state.model.predict(df[['SMA_20', 'SMA_50', 'RSI']])
+    # Sidebar Configuration
+    with st.sidebar:
+        st.header("Data Configuration")
+        data_source = st.radio("Select Data Source:", ["Yahoo Finance", "Upload Dataset"])
+        
+        if data_source == "Yahoo Finance":
+            ticker = st.text_input("Enter Stock Ticker (e.g., AAPL):", "AAPL")
+            start_date = st.date_input("Start Date:", pd.to_datetime('2020-01-01'))
+            end_date = st.date_input("End Date:")
+        else:
+            uploaded_file = st.file_uploader("Upload CSV File:", type=["csv"])
+    
+    # Step 1: Load Data
+    st.header("Step 1: Load Data")
+    if st.button("Load Data"):
+        try:
+            if data_source == "Yahoo Finance":
+                df = yf.download(ticker, start=start_date, end=end_date)
+                df = df.reset_index()
+                st.session_state.data = df
+            else:
+                if uploaded_file:
+                    df = pd.read_csv(uploaded_file)
+                    st.session_state.data = df
             
-            fig = px.line(df, x='Date', y=['Close', 'Prediction'],
-                         title="AAPL Price Predictions",
-                         color_discrete_sequence=['#3498db', '#e74c3c'])
-            fig.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font_color='white'
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            st.session_state.steps['loaded'] = True
+            st.success("Data loaded successfully!")
+            st.write("Data Preview:")
+            st.dataframe(st.session_state.data.head())
+            
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+
+    # Only show subsequent steps if data is loaded
+    if st.session_state.steps['loaded']:
+        # Step 2: Preprocessing
+        st.header("Step 2: Data Preprocessing")
+        if st.button("Clean Data"):
+            df = st.session_state.data
+            
+            # Handle missing values
+            missing = df.isnull().sum()
+            st.write("Missing Values Before Cleaning:")
+            st.write(missing)
+            
+            df = df.dropna()
+            
+            st.write("Missing Values After Cleaning:")
+            st.write(df.isnull().sum())
+            
+            st.session_state.data = df
+            st.session_state.steps['processed'] = True
+            st.success("Data cleaning completed!")
+
+        if st.session_state.steps.get('processed'):
+            # Step 3: Feature Engineering
+            st.header("Step 3: Feature Engineering")
+            if st.button("Create Features"):
+                df = st.session_state.data
+                
+                # Create features for stock data
+                df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                df['SMA_50'] = df['Close'].rolling(window=50).mean()
+                df = df.dropna()
+                
+                st.session_state.data = df
+                st.success("Features created!")
+                st.write("Updated Data:")
+                st.dataframe(df.tail())
+
+            # Step 4: Train/Test Split
+            st.header("Step 4: Train/Test Split")
+            if st.button("Split Data"):
+                df = st.session_state.data
+                X = df[['SMA_20', 'SMA_50']]
+                y = df['Close']
+                
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, shuffle=False)
+                
+                st.session_state.X_train = X_train
+                st.session_state.X_test = X_test
+                st.session_state.y_train = y_train
+                st.session_state.y_test = y_test
+                
+                # Visualize split
+                split_counts = pd.Series({
+                    'Training': len(X_train),
+                    'Testing': len(X_test)
+                })
+                fig = px.pie(split_counts, values=split_counts, names=split_counts.index)
+                st.plotly_chart(fig)
+                st.success("Data split completed!")
+
+                # Step 5: Model Training
+                st.header("Step 5: Model Training")
+                if st.button("Train Model"):
+                    model = LinearRegression()
+                    model.fit(st.session_state.X_train, st.session_state.y_train)
+                    st.session_state.model = model
+                    st.success("Model training completed!")
+
+                if st.session_state.model:
+                    # Step 6: Evaluation
+                    st.header("Step 6: Model Evaluation")
+                    if st.button("Evaluate Model"):
+                        y_pred = st.session_state.model.predict(st.session_state.X_test)
+                        
+                        # Calculate metrics
+                        mse = mean_squared_error(st.session_state.y_test, y_pred)
+                        r2 = r2_score(st.session_state.y_test, y_pred)
+                        
+                        # Display metrics
+                        st.metric("Mean Squared Error", f"{mse:.2f}")
+                        st.metric("R² Score", f"{r2:.2f}")
+                        
+                        # Plot predictions
+                        fig = px.line(
+                            title="Actual vs Predicted Prices",
+                            x=st.session_state.X_test.index,
+                            y=[st.session_state.y_test, y_pred],
+                            labels={'value': 'Price', 'variable': 'Legend'},
+                            color_discrete_sequence=['blue', 'orange']
+                        )
+                        fig.update_layout(showlegend=False)
+                        st.plotly_chart(fig)
 
 if __name__ == "__main__":
     main()
