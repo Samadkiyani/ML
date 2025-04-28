@@ -140,6 +140,7 @@ def main():
     # ------------------
     # D. Feature Engineering
    # Feature Engineering
+# Feature Engineering
 if st.session_state.steps['processed']:
     with st.expander("⚡ STEP 3: Create Advanced Features", expanded=True):
         if st.button("🔧 Generate Trading Signals"):
@@ -151,8 +152,11 @@ if st.session_state.steps['processed']:
                 df['EMA_12'] = df['Close'].ewm(span=12).mean()
                 df['EMA_26'] = df['Close'].ewm(span=26).mean()
                 df['MACD'] = df['EMA_12'] - df['EMA_26']
+                
+                # Fixed RSI calculation
                 df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().clip(lower=0).rolling(14).mean() / 
-                                   df['Close'].diff().clip(upper=0).abs().rolling(14).mean()))
+                                   df['Close'].diff().clip(upper=0).abs().rolling(14).mean())))
+                
                 st.session_state.aapl_data = df.dropna()
                 
                 st.success("Professional trading features created")
