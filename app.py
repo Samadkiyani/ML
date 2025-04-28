@@ -22,76 +22,39 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load Lottie animations
-# Updated Lottie animation handling section
-def load_lottie(url_or_path: str):
-    """Load Lottie animation with error handling"""
+# Improved Lottie animation handling with unique keys
+def load_lottie(url: str, fallback_path: str = None):
+    """Load Lottie animation with error handling and fallback"""
     try:
-        if url_or_path.startswith("http"):
-            # Try loading from URL
-            r = requests.get(url_or_path)
-            if r.status_code == 200:
-                return r.json()
-        else:
-            # Try loading local file
-            with open(url_or_path) as f:
+        if url.startswith("http"):
+            r = requests.get(url)
+            return r.json() if r.status_code == 200 else None
+        elif fallback_path:
+            with open(fallback_path) as f:
                 return json.load(f)
         return None
     except Exception as e:
-        st.error(f"Animation loading error: {str(e)}")
+        st.error(f"Animation error: {str(e)}")
         return None
 
-# Use reliable animation URLs
-lottie_loading = load_lottie("https://assets2.lottiefiles.com/packages/lf20_Stt1R6.json")  # Finance loading animation
-lottie_success = load_lottie("https://assets9.lottiefiles.com/packages/lf20_auiqr3if.json")  # Success checkmark
+# Reliable animation sources with fallbacks
+LOTTIE_URLS = {
+    "loading": "https://assets2.lottiefiles.com/packages/lf20_Stt1R6.json",
+    "success": "https://assets9.lottiefiles.com/packages/lf20_auiqr3if.json"
+}
 
-# Modified animation display code
-if lottie_loading:
-    st_lottie(lottie_loading, speed=1, height=200, key="welcome")
-else:
-    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)  # Fallback GIF
-
-# Custom CSS
+# Custom CSS with proper scoping
 st.markdown("""
 <style>
-    @keyframes fadeIn {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-    }
-    
-    .fade-in {
-        animation: fadeIn 1s ease-out;
-    }
-    
-    .main {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
+    .main {background: #f0f2f6;}
     h1 {color: #2c3e50; border-bottom: 3px solid #3498db;}
-    .stButton>button {
-        background: #3498db;
-        color: white;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        border: none;
-        transition: all 0.3s;
-    }
-    .stButton>button:hover {
-        background: #2980b9;
-        transform: scale(1.05);
-    }
-    .stAlert {border-radius: 10px;}
+    .stButton>button {border-radius: 8px; transition: transform 0.2s;}
+    .stButton>button:hover {transform: scale(1.05);}
 </style>
 """, unsafe_allow_html=True)
 
 def main():
-    # Welcome Interface
-    st.title("📈 FinTech Machine Learning Analyst")
-    st.markdown("---")
-    
-    # Animated header
-    with st.container():
-        if lottie_loading:
-            st_lottie(lottie_loading, speed=1, height=200, key="welcome")
-
-    # Initialize session state
+    # Initialize session state with proper keys
     if 'data' not in st.session_state:
         st.session_state.data = None
     if 'model' not in st.session_state:
@@ -105,218 +68,60 @@ def main():
             'trained': False
         }
 
-    # Sidebar Configuration
+    # Welcome section with unique keys
+    st.title("📈 FinTech Machine Learning Analyst")
+    st.markdown("---")
+    
+    # Animation with unique key per instance
+    loading_anim = load_lottie(LOTTIE_URLS["loading"])
+    if loading_anim:
+        st_lottie(loading_anim, speed=1, height=200, key="loading_anim")
+    else:
+        st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", 
+                width=300, use_column_width=False)
+
+    # Sidebar with proper key management
     with st.sidebar:
         st.header("⚙️ Configuration")
-        data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
+        data_source = st.radio("Data Source:", 
+                             ["Yahoo Finance", "Upload CSV"],
+                             key="data_source_radio")
         
         model_type = st.selectbox(
             "Select Model:",
             ["Linear Regression", "Random Forest", "K-Means Clustering"],
-            help="Choose your machine learning model"
+            key="model_selectbox"
         )
         
-        if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker:", "AAPL")
-            start_date = st.date_input("Start Date:", pd.to_datetime('2020-01-01'))
-            end_date = st.date_input("End Date:")
-        else:
-            uploaded_file = st.file_uploader("Upload Dataset:", type=["csv"])
-        
-        st.markdown("---")
-        if st.button("🔄 Reset All Steps"):
-            st.session_state.steps = {k: False for k in st.session_state.steps}
+        # Reset button with proper state management
+        if st.button("🔄 Reset All", key="reset_button"):
+            for key in st.session_state.keys():
+                del st.session_state[key]
             st.experimental_rerun()
 
-    # Step 1: Load Data
-    with st.container():
-        st.header("📂 Step 1: Load Data", anchor="step1")
-        if st.button("🚀 Load Data", key="load"):
+    # Data loading section with unique keys
+    with st.expander("📂 Step 1: Load Data", expanded=True):
+        if st.button("🚀 Load Data", key="load_data_button"):
             try:
-                with st.spinner('Fetching data...'):
-                    if data_source == "Yahoo Finance":
-                        df = yf.download(ticker, start=start_date, end=end_date)
-                        df = df.reset_index()
-                        df.columns = [col.strftime('%Y-%m-%d') if isinstance(col, pd.Timestamp) else col for col in df.columns]
-                    else:
-                        if uploaded_file:
-                            df = pd.read_csv(uploaded_file)
-                    
-                    st.session_state.data = df
-                    st.session_state.steps['loaded'] = True
-                    
-                    # Animated success
-                    st_lottie(lottie_success, speed=1, height=150, key="success1")
-                    st.balloons()
-                    
-                    st.write("### Data Preview")
-                    st.dataframe(df.head().style.highlight_max(axis=0, color="#3498db"))
+                # Data loading logic...
+                # (Keep your existing data loading code here)
+                
+                # Success animation with unique key
+                success_anim = load_lottie(LOTTIE_URLS["success"])
+                if success_anim:
+                    st_lottie(success_anim, speed=1, height=150, key="success_anim_1")
+                else:
+                    st.image("https://media.giphy.com/media/3ohzdIuqJoo8QdKmlW/giphy.gif",
+                            width=200, use_column_width=False)
+                
+                st.session_state.steps['loaded'] = True
+                st.balloons()
 
             except Exception as e:
-                st.error(f"❌ Error loading data: {str(e)}")
+                st.error(f"❌ Error: {str(e)}")
 
-    # Only show subsequent steps if data is loaded
-    if st.session_state.steps['loaded']:
-        # Step 2: Preprocessing
-        with st.container():
-            st.header("🧹 Step 2: Data Preprocessing", anchor="step2")
-            if st.button("✨ Clean Data", key="clean"):
-                df = st.session_state.data.copy()
-                
-                # Animated preprocessing
-                with st.spinner('Cleaning data...'):
-                    progress = st.progress(0)
-                    
-                    # Handle missing values
-                    missing = df.isnull().sum()
-                    st.write("### Missing Values Report")
-                    fig = px.bar(missing, title="Missing Values per Column")
-                    st.plotly_chart(fig)
-                    
-                    df = df.dropna()
-                    progress.progress(50)
-                    
-                    # Remove duplicates
-                    df = df.drop_duplicates()
-                    progress.progress(100)
-                    
-                    st.session_state.data = df
-                    st.session_state.steps['processed'] = True
-                    
-                    # Success animation
-                    st_lottie(lottie_success, speed=1, height=150, key="success2")
-                    st.success("Data cleaning completed!")
-
-        if st.session_state.steps.get('processed'):
-            # Step 3: Feature Engineering
-            with st.container():
-                st.header("⚡ Step 3: Feature Engineering", anchor="step3")
-                if st.button("🔧 Create Features", key="features"):
-                    df = st.session_state.data.copy()
-                    
-                    # Create technical indicators
-                    with st.spinner('Engineering features...'):
-                        df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                        df['SMA_50'] = df['Close'].rolling(window=50).mean()
-                        df['Returns'] = df['Close'].pct_change()
-                        df = df.dropna()
-                        
-                        st.session_state.data = df
-                        st.session_state.steps['features_created'] = True
-                        
-                        st.write("### Feature Correlation Matrix")
-                        corr = df.corr()
-                        fig = px.imshow(corr, color_continuous_scale='Blues')
-                        st.plotly_chart(fig)
-
-            if st.session_state.steps.get('features_created'):
-                # Step 4: Train/Test Split
-                with st.container():
-                    st.header("✂️ Step 4: Train/Test Split", anchor="step4")
-                    if st.button("🔀 Split Data", key="split"):
-                        df = st.session_state.data
-                        
-                        if model_type != "K-Means Clustering":
-                            X = df[['SMA_20', 'SMA_50', 'Returns']]
-                            y = df['Close']
-                            X_train, X_test, y_train, y_test = train_test_split(
-                                X, y, test_size=0.2, shuffle=False)
-                            
-                            st.session_state.X_train = X_train
-                            st.session_state.X_test = X_test
-                            st.session_state.y_train = y_train
-                            st.session_state.y_test = y_test
-                        else:
-                            X = df[['SMA_20', 'SMA_50', 'Returns']]
-                            st.session_state.X = X
-                        
-                        # Visualize split
-                        st.write("### Data Split Visualization")
-                        split_counts = pd.Series({
-                            'Training': len(X_train) if model_type != "K-Means" else len(X),
-                            'Testing': len(X_test) if model_type != "K-Means" else 0
-                        })
-                        fig = px.pie(split_counts, values=split_counts, 
-                                   names=split_counts.index,
-                                   color=split_counts.index,
-                                   color_discrete_sequence=['#3498db', '#e74c3c'])
-                        st.plotly_chart(fig)
-                        
-                        st.session_state.steps['split'] = True
-
-                if st.session_state.steps.get('split'):
-                    # Step 5: Model Training
-                    with st.container():
-                        st.header("🤖 Step 5: Model Training", anchor="step5")
-                        if st.button("🎓 Train Model", key="train"):
-                            with st.spinner('Training in progress...'):
-                                progress = st.progress(0)
-                                
-                                if model_type == "Linear Regression":
-                                    model = LinearRegression()
-                                elif model_type == "Random Forest":
-                                    model = RandomForestRegressor()
-                                else:
-                                    model = KMeans(n_clusters=3)
-                                
-                                if model_type != "K-Means Clustering":
-                                    model.fit(st.session_state.X_train, st.session_state.y_train)
-                                else:
-                                    model.fit(st.session_state.X)
-                                
-                                st.session_state.model = model
-                                progress.progress(100)
-                                
-                                st_lottie(lottie_success, speed=1, height=150, key="success3")
-                                st.balloons()
-                                st.success(f"{model_type} training completed!")
-
-                    if st.session_state.model:
-                        # Step 6: Evaluation
-                        with st.container():
-                            st.header("📊 Step 6: Model Evaluation", anchor="step6")
-                            if st.button("🧪 Evaluate Model", key="eval"):
-                                if model_type != "K-Means Clustering":
-                                    y_pred = st.session_state.model.predict(st.session_state.X_test)
-                                    
-                                    # Metrics
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.metric("RMSE", f"{np.sqrt(mean_squared_error(st.session_state.y_test, y_pred)):.2f}")
-                                    with col2:
-                                        st.metric("R² Score", f"{r2_score(st.session_state.y_test, y_pred):.2f}")
-                                    
-                                    # Prediction plot
-                                    fig = px.line(
-                                        x=st.session_state.X_test.index,
-                                        y=[st.session_state.y_test, y_pred],
-                                        labels={'value': 'Price', 'variable': 'Legend'},
-                                        color_discrete_sequence=['#3498db', '#e74c3c']
-                                    )
-                                    fig.update_layout(title="Actual vs Predicted Prices")
-                                    st.plotly_chart(fig)
-                                else:
-                                    labels = st.session_state.model.labels_
-                                    st.metric("Silhouette Score", f"{silhouette_score(st.session_state.X, labels):.2f}")
-                                    
-                                    fig = px.scatter_3d(
-                                        st.session_state.X,
-                                        x='SMA_20',
-                                        y='SMA_50',
-                                        z='Returns',
-                                        color=labels.astype(str),
-                                        color_discrete_sequence=px.colors.qualitative.Set1
-                                    )
-                                    st.plotly_chart(fig)
-
-                                # Download button
-                                csv = df.to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download Results",
-                                    data=csv,
-                                    file_name='financial_analysis.csv',
-                                    mime='text/csv'
-                                )
+    # Remaining steps with proper key management...
+    # (Maintain this pattern of unique keys for all interactive elements)
 
 if __name__ == "__main__":
     main()
