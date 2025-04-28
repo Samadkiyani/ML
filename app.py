@@ -226,24 +226,47 @@ def main():
 
                 if st.session_state.model:
                     # Step 6: Evaluation
-                    with st.container():
-                        st.markdown('<div class="section-card">', unsafe_allow_html=True)
-                        st.header("📈 Step 6: Model Evaluation")
-                        if st.button("📝 Evaluate Model"):
-                            with st.spinner("Evaluating model..."):
-                                y_pred = st.session_state.model.predict(st.session_state.X_test)
-                                
-                                # Metrics
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.markdown("""
-                                    <div style='background: #f8f9fa; padding: 2rem; border-radius: 10px;'>
-                                        <h3 style='color: #004488;'>Model Metrics</h3>
-                                        <h4 style='color: #4CAF50;'>MSE: {mse:.2f}</h4>
-                                        <h4 style='color: #4CAF50;'>R²: {r2:.2f}</h4>
-                                    </div>
-                                    """.format(mse=mean_squared_error(st.session_state.y_test, y_pred),
-                                    unsafe_allow_html=True)
+                    # Step 6: Evaluation
+with st.container():
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.header("📈 Step 6: Model Evaluation")
+    if st.button("📝 Evaluate Model"):
+        with st.spinner("Evaluating model..."):
+            y_pred = st.session_state.model.predict(st.session_state.X_test)
+            
+            # Calculate metrics
+            mse = mean_squared_error(st.session_state.y_test, y_pred)
+            r2 = r2_score(st.session_state.y_test, y_pred)
+            
+            # Metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                <div style='background: #f8f9fa; padding: 2rem; border-radius: 10px;'>
+                    <h3 style='color: #004488;'>Model Metrics</h3>
+                    <h4 style='color: #4CAF50;'>MSE: {mse:.2f}</h4>
+                    <h4 style='color: #4CAF50;'>R²: {r2:.2f}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Plot
+            fig = px.line(
+                title="Actual vs Predicted Prices",
+                x=st.session_state.X_test.index,
+                y=[st.session_state.y_test, y_pred],
+                labels={'value': 'Price', 'variable': 'Legend'},
+                color_discrete_sequence=['#004488', '#4CAF50']
+            )
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Date",
+                yaxis_title="Price",
+                hovermode="x unified"
+            )
+            st.plotly_chart(fig)
+            st_lottie(lottie_success, height=100, key="success6")
+    st.markdown('</div>', unsafe_allow_html=True)
                                 
                                 # Plot
                                 fig = px.line(
