@@ -23,14 +23,33 @@ st.set_page_config(
 )
 
 # Load Lottie animations
-def load_lottieurl(url: str):
-    r = requests.get(url)
-    if r.status_code != 200:
+# Updated Lottie animation handling section
+def load_lottie(url_or_path: str):
+    """Load Lottie animation with error handling"""
+    try:
+        if url_or_path.startswith("http"):
+            # Try loading from URL
+            r = requests.get(url_or_path)
+            if r.status_code == 200:
+                return r.json()
+        else:
+            # Try loading local file
+            with open(url_or_path) as f:
+                return json.load(f)
         return None
-    return r.json()
+    except Exception as e:
+        st.error(f"Animation loading error: {str(e)}")
+        return None
 
-lottie_loading = load_lottieurl("https://assets8.lottiefiles.com/packages/lf20_raiw2hpe.json")
-lottie_success = load_lottieurl("https://assets4.lottiefiles.com/packages/lf20_auwiessx.json")
+# Use reliable animation URLs
+lottie_loading = load_lottie("https://assets2.lottiefiles.com/packages/lf20_Stt1R6.json")  # Finance loading animation
+lottie_success = load_lottie("https://assets9.lottiefiles.com/packages/lf20_auiqr3if.json")  # Success checkmark
+
+# Modified animation display code
+if lottie_loading:
+    st_lottie(lottie_loading, speed=1, height=200, key="welcome")
+else:
+    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", width=300)  # Fallback GIF
 
 # Custom CSS
 st.markdown("""
