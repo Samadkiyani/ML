@@ -5,229 +5,266 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import joblib
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-from streamlit_lottie import st_lottie
-import requests
-from datetime import datetime
+from io import StringIO
+import joblib
+import datetime
 
 # Configure page
 st.set_page_config(
-    page_title="FinVision Pro",
+    page_title="FinML Pro",
     page_icon="💹",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Lottie animations
-ANIMATIONS = {
-    "main": "https://assets1.lottiefiles.com/packages/lf20_ysrn2iwp.json",
-    "success": "https://assets1.lottiefiles.com/packages/lf20_au03ianj.json",
-    "loading": "https://assets1.lottiefiles.com/packages/lf20_raiw2hpe.json"
-}
-
-def load_lottie(url: str):
-    try:
-        r = requests.get(url, timeout=5)
-        return r.json() if r.status_code == 200 else None
-    except Exception:
-        return None
-
 # Custom CSS
 st.markdown("""
 <style>
-    .pipeline-step {
-        border-left: 4px solid #6366f1;
-        padding: 1rem;
-        margin: 1rem 0;
-        background: #f8fafc;
-        border-radius: 8px;
-    }
-    .metric-card {
-        background: white;
-        border-radius: 10px;
-        padding: 1.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+    .main {background-color: #f9f9f9;}
+    h1 {color: #2a4a7c; border-bottom: 2px solid #2a4a7c;}
+    h2 {color: #3b6ea5;}
+    .stButton>button {background-color: #2a4a7c; color: white; border-radius: 5px;}
+    .stDownloadButton>button {background-color: #4CAF50; color: white;}
+    .stAlert {border-radius: 5px;}
+    .sidebar .sidebar-content {background-color: #e8f4f8;}
 </style>
 """, unsafe_allow_html=True)
 
 def main():
-    st.session_state.setdefault('data', None)
-    st.session_state.setdefault('model', None)
-    st.session_state.setdefault('steps', {
-        'loaded': False,
-        'preprocessed': False,
-        'engineered': False,
-        'split': False,
-        'trained': False,
-        'evaluated': False,
-    })
+    st.title("📈 FinML Pro - Financial Machine Learning Platform")
+    st.markdown("---")
+    
+    # Initialize session state
+    session_defaults = {
+        'data': None,
+        'model': None,
+        'steps': {
+            'loaded': False,
+            'processed': False,
+            'features_created': False,
+            'split': False,
+            'trained': False
+        },
+        'predictions': None
+    }
+    
+    for key, value in session_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
     # Sidebar Configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
-        model_type = st.selectbox("Select Model", ["Linear Regression", "Random Forest"])
-        data_source = st.radio("Data Source", ["Yahoo Finance", "Upload CSV"])
+        data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Symbol", "AAPL").upper()
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input("Start Date", pd.to_datetime('2020-01-01'))
-            with col2:
-                end_date = st.date_input("End Date")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
+            start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
+            end_date = st.date_input("End Date:", datetime.date.today())
         else:
-            uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
-
-    # Main Content
-    with st.container():
-        st_lottie(load_lottie(ANIMATIONS["main"]), height=200) if not st.session_state.steps['loaded'] else st.empty()
+            uploaded_file = st.file_uploader("Upload Dataset:", type=["csv"])
+        
+        st.markdown("---")
+        st.header("🧠 Model Settings")
+        model_type = st.selectbox("Select Model:", 
+                                ["Linear Regression", "Random Forest"])
+        test_size = st.slider("Test Size Ratio:", 0.1, 0.5, 0.2)
+        
+        st.markdown("---")
+        st.header("🔗 Navigation")
+        st.button("Reload App", on_click=lambda: st.session_state.clear())
 
     # Step 1: Load Data
-    with st.expander("1. Load Data", expanded=True):
-        if st.button("🚀 Load Data"):
-            try:
-                with st.spinner("Fetching data..."):
-                    if data_source == "Yahoo Finance":
-                        df = yf.download(ticker, start=start_date, end=end_date)
-                        df = df.reset_index()
-                    else:
-                        df = pd.read_csv(uploaded_file, parse_dates=['Date'])
-                    
-                    st.session_state.data = df
-                    st.session_state.steps['loaded'] = True
-                    
-                    st.success("✅ Data loaded successfully!")
-                    st.dataframe(df.head())
-                    
-                    # Initial Visualization
-                    fig = go.Figure(data=[go.Candlestick(
-                        x=df['Date'],
-                        open=df['Open'],
-                        high=df['High'],
-                        low=df['Low'],
-                        close=df['Close']
-                    )])
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-            except Exception as e:
-                st.error(f"Error loading data: {str(e)}")
+    st.header("1. Data Acquisition")
+    if st.button("🚀 Load Data"):
+        try:
+            if data_source == "Yahoo Finance":
+                with st.spinner("Fetching market data..."):
+                    df = yf.download(ticker, start=start_date, end=end_date)
+                    if df.empty:
+                        st.error("Invalid ticker or date range!")
+                        return
+                    df = df.reset_index()
+                    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", 
+                           caption="Market data loaded!")
+            else:
+                if uploaded_file:
+                    df = pd.read_csv(uploaded_file)
+                    st.success("CSV file loaded successfully!")
+                else:
+                    st.warning("Please upload a CSV file!")
+                    return
+
+            st.session_state.data = df
+            st.session_state.steps['loaded'] = True
+            st.write("### Data Preview:")
+            st.dataframe(df.head().style.format("{:.2f}"), height=200)
+            
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
 
     # Step 2: Preprocessing
     if st.session_state.steps['loaded']:
-        with st.expander("2. Data Preprocessing"):
+        st.header("2. Data Preprocessing")
+        col1, col2 = st.columns(2)
+        
+        with col1:
             if st.button("🧹 Clean Data"):
                 df = st.session_state.data
-                initial_missing = df.isna().sum().sum()
-                df = df.dropna()
-                st.session_state.data = df
-                st.session_state.steps['preprocessed'] = True
                 
-                st.success(f"✅ Removed {initial_missing} missing values")
-                st.write("Missing values after cleaning:", df.isna().sum().to_frame().T)
+                st.write("### Missing Values Analysis:")
+                missing = df.isnull().sum().to_frame("Missing Values")
+                fig = px.bar(missing, orientation='h', 
+                             labels={'index': 'Features', 'value': 'Count'},
+                             color_discrete_sequence=['#2a4a7c'])
+                st.plotly_chart(fig, use_container_width=True)
+                
+                df = df.dropna().reset_index(drop=True)
+                
+                st.session_state.data = df
+                st.session_state.steps['processed'] = True
+                st.success("Data cleaning completed! Missing values removed.")
+
+        with col2:
+            if st.session_state.steps['processed']:
+                st.write("### Cleaned Data Statistics:")
+                st.dataframe(df.describe().style.format("{:.2f}"), height=300)
 
     # Step 3: Feature Engineering
-    if st.session_state.steps['preprocessed']:
-        with st.expander("3. Feature Engineering"):
-            if st.button("🔧 Generate Features"):
-                df = st.session_state.data
-                df['SMA_20'] = df['Close'].rolling(20).mean()
-                df['SMA_50'] = df['Close'].rolling(50).mean()
-                df['RSI'] = 100 - (100 / (1 + (df['Close'].diff(1).clip(lower=0).rolling(14).mean() /
-                                         df['Close'].diff(1).clip(upper=0).abs().rolling(14).mean())))
-                st.session_state.data = df.dropna()
-                st.session_state.steps['engineered'] = True
-                
-                st.success("✅ Features created!")
-                st.write("New features:", df[['SMA_20', 'SMA_50', 'RSI']].tail())
+    if st.session_state.steps['processed']:
+        st.header("3. Feature Engineering")
+        
+        if st.button("⚡ Create Features"):
+            df = st.session_state.data
+            
+            # Technical indicators
+            df['SMA_20'] = df['Close'].rolling(20).mean()
+            df['SMA_50'] = df['Close'].rolling(50).mean()
+            df['RSI'] = compute_rsi(df['Close'])
+            df = df.dropna()
+            
+            st.session_state.data = df
+            st.session_state.steps['features_created'] = True
+            
+            st.write("### Feature Correlation Matrix:")
+            corr_matrix = df.corr()
+            fig = px.imshow(corr_matrix, text_auto=".2f", 
+                           color_continuous_scale='Blues')
+            st.plotly_chart(fig, use_container_width=True)
 
     # Step 4: Train/Test Split
-    if st.session_state.steps['engineered']:
-        with st.expander("4. Train/Test Split"):
-            if st.button("🎯 Split Data"):
-                df = st.session_state.data
-                X = df[['SMA_20', 'SMA_50', 'RSI']]
-                y = df['Close']
-                st.session_state.X_train, st.session_state.X_test, st.session_state.y_train, st.session_state.y_test = \
-                    train_test_split(X, y, test_size=0.2, shuffle=False)
-                st.session_state.steps['split'] = True
-                
-                fig = px.pie(values=[len(y)-len(st.session_state.y_test), len(st.session_state.y_test)],
-                             names=['Train', 'Test'],
-                             title="Train-Test Split Ratio")
-                st.plotly_chart(fig, use_container_width=True)
-                st.success("✅ Data split completed!")
+    if st.session_state.steps['features_created']:
+        st.header("4. Data Split")
+        
+        if st.button("✂️ Split Dataset"):
+            df = st.session_state.data
+            X = df[['SMA_20', 'SMA_50', 'RSI']]
+            y = df['Close']
+            
+            # Feature scaling
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_scaled, y, test_size=test_size, shuffle=False)
+            
+            st.session_state.update({
+                'X_train': X_train,
+                'X_test': X_test,
+                'y_train': y_train,
+                'y_test': y_test,
+                'scaler': scaler,
+                'steps.split': True
+            })
+            
+            st.write("### Dataset Split Visualization:")
+            split_df = pd.DataFrame({
+                'Set': ['Train', 'Test'],
+                'Count': [len(X_train), len(X_test)]
+            })
+            fig = px.pie(split_df, values='Count', names='Set', 
+                        color_discrete_sequence=['#2a4a7c', '#3b6ea5'])
+            st.plotly_chart(fig, use_container_width=True)
 
     # Step 5: Model Training
-    if st.session_state.steps['split']:
-        with st.expander("5. Model Training"):
-            if st.button("🎓 Train Model"):
-                if model_type == "Linear Regression":
-                    model = LinearRegression()
-                else:
-                    model = RandomForestRegressor(n_estimators=100)
+    if st.session_state.steps.get('split'):
+        st.header("5. Model Training")
+        
+        if st.button("🎯 Train Model"):
+            if model_type == "Linear Regression":
+                model = LinearRegression()
+            else:
+                model = RandomForestRegressor(n_estimators=100)
+            
+            with st.spinner("Training in progress..."):
                 model.fit(st.session_state.X_train, st.session_state.y_train)
                 st.session_state.model = model
                 st.session_state.steps['trained'] = True
-                
-                st.success(f"✅ {model_type} training completed!")
-                
-                if model_type == "Random Forest":
-                    importance = pd.DataFrame({
-                        'Feature': st.session_state.X_train.columns,
-                        'Importance': model.feature_importances_
-                    }).sort_values('Importance', ascending=False)
-                else:
-                    importance = pd.DataFrame({
-                        'Feature': st.session_state.X_train.columns,
-                        'Importance': model.coef_
-                    }).sort_values('Importance', ascending=False)
-                
-                fig = px.bar(importance, x='Importance', y='Feature', orientation='h')
+            
+            st.success(f"{model_type} trained successfully!")
+            st.balloons()
+
+    # Step 6: Model Evaluation
+    if st.session_state.steps.get('trained'):
+        st.header("6. Model Evaluation")
+        
+        if st.button("📊 Evaluate Performance"):
+            model = st.session_state.model
+            X_test = st.session_state.X_test
+            y_test = st.session_state.y_test
+            
+            y_pred = model.predict(X_test)
+            st.session_state.predictions = y_pred
+            
+            # Metrics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
+            with col2:
+                st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+            
+            # Prediction plot
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=y_test.index, y=y_test, 
+                                   name='Actual', line=dict(color='#2a4a7c')))
+            fig.add_trace(go.Scatter(x=y_test.index, y=y_pred, 
+                                   name='Predicted', line=dict(color='#4CAF50')))
+            fig.update_layout(title="Actual vs Predicted Prices",
+                            xaxis_title="Time",
+                            yaxis_title="Price",
+                            template="plotly_white")
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Feature importance
+            if model_type == "Random Forest":
+                st.write("### Feature Importance:")
+                importance = model.feature_importances_
+                features = ['SMA_20', 'SMA_50', 'RSI']
+                fig = px.bar(x=features, y=importance, 
+                             labels={'x': 'Features', 'y': 'Importance'},
+                             color=features, color_discrete_sequence=px.colors.qualitative.Pastel)
                 st.plotly_chart(fig, use_container_width=True)
 
-    # Step 6: Evaluation
-    if st.session_state.steps['trained']:
-        with st.expander("6. Model Evaluation"):
-            if st.button("📊 Evaluate Model"):
-                model = st.session_state.model
-                y_pred = model.predict(st.session_state.X_test)
-                rmse = np.sqrt(mean_squared_error(st.session_state.y_test, y_pred))
-                r2 = r2_score(st.session_state.y_test, y_pred)
-                st.session_state.steps['evaluated'] = True
+            # Download results
+            results = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
+            csv = results.to_csv(index=False).encode('utf-8')
+            st.download_button("💾 Download Predictions", csv, 
+                              "predictions.csv", "text/csv")
 
-                col1, col2 = st.columns(2)
-                col1.metric("RMSE", f"{rmse:.2f}")
-                col2.metric("R² Score", f"{r2:.2f}")
+    st.markdown("---")
+    st.markdown("Built with ❤️ using Streamlit | [GitHub Repo](#)")
 
-                df_result = pd.DataFrame({
-                    "Actual": st.session_state.y_test,
-                    "Predicted": y_pred
-                }).reset_index(drop=True)
-
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(y=df_result["Actual"], name="Actual"))
-                fig.add_trace(go.Scatter(y=df_result["Predicted"], name="Predicted"))
-                fig.update_layout(title="Actual vs Predicted Closing Prices")
-                st.plotly_chart(fig, use_container_width=True)
-
-    # Step 7: Prediction
-    if st.session_state.steps['evaluated']:
-        with st.expander("7. Make Prediction"):
-            st.markdown("🔮 Enter new feature values to predict future closing price:")
-            sma_20 = st.number_input("SMA_20")
-            sma_50 = st.number_input("SMA_50")
-            rsi = st.number_input("RSI")
-
-            if st.button("📈 Predict Closing Price"):
-                input_data = np.array([[sma_20, sma_50, rsi]])
-                prediction = st.session_state.model.predict(input_data)[0]
-                st.success(f"📌 Predicted Closing Price: ${prediction:.2f}")
+def compute_rsi(prices, window=14):
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 if __name__ == "__main__":
     main()
