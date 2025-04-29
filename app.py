@@ -93,7 +93,7 @@ def main():
                            caption="Market data loaded!")
             else:
                 if uploaded_file:
-                    df = pd.read_csv(uploaded_file)
+                    df = pd.read_csv(uploaded_file).reset_index(drop=True)
                     st.success("CSV file loaded successfully!")
                 else:
                     st.warning("Please upload a CSV file!")
@@ -118,8 +118,11 @@ def main():
                     df = st.session_state.data.copy()
                     
                     st.write("### Missing Values Analysis:")
-                    missing = df.isnull().sum().reset_index(name='Missing Values')
-                    missing.columns = ['Feature', 'Missing Values']
+                    # Fixed column mismatch error here
+                    missing = pd.DataFrame({
+                        'Feature': df.columns,
+                        'Missing Values': df.isnull().sum().values
+                    })
                     
                     fig = px.bar(missing, 
                                 x='Missing Values', 
@@ -163,12 +166,10 @@ def main():
                 st.session_state.steps['features_created'] = True
                 
                 st.write("### Feature Correlation Matrix:")
-                corr_matrix = df.corr().reset_index()
-                fig = px.imshow(corr_matrix.drop('index', axis=1), 
+                corr_matrix = df.corr()
+                fig = px.imshow(corr_matrix, 
                               text_auto=".2f", 
-                              color_continuous_scale='Blues',
-                              x=corr_matrix.columns[1:],
-                              y=corr_matrix.columns[1:])
+                              color_continuous_scale='Blues')
                 st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
