@@ -89,8 +89,10 @@ def main():
                         st.error("Invalid ticker or date range!")
                         return
                     df = df.reset_index()
-                    st.image("https://media.giphy.com/media/3ohhwgr4HoUu0k3buw/giphy.gif", 
-                           caption="Market data loaded!")
+                    # Professional market data visualization
+                    st.image("https://images.unsplash.com/photo-1611974789855-9c2a0a82e8ba",
+                           caption="Market Analytics Dashboard",
+                           width=600)
             else:
                 if uploaded_file:
                     df = pd.read_csv(uploaded_file).reset_index(drop=True)
@@ -186,7 +188,7 @@ def main():
             try:
                 df = st.session_state.data.copy()
                 X = df[['SMA_20', 'SMA_50', 'RSI']]
-                y = df['Close'].values  # Convert to numpy array
+                y = df['Close'].values
                 
                 # Feature scaling
                 scaler = StandardScaler()
@@ -240,7 +242,7 @@ def main():
             except Exception as e:
                 st.error(f"Model training failed: {str(e)}")
 
-    # Step 6: Model Evaluation (Fixed Dimension Issue)
+    # Step 6: Model Evaluation
     if st.session_state.steps.get('trained'):
         st.header("6. Model Evaluation")
         
@@ -250,10 +252,8 @@ def main():
                 X_test = st.session_state.X_test
                 y_test = st.session_state.y_test
                 
-                # Ensure 1D array for predictions
                 y_pred = model.predict(X_test).flatten()
                 
-                # Handle possible 2D arrays
                 if len(y_test.shape) > 1:
                     y_test = y_test.ravel()
                 
@@ -295,10 +295,7 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
 
                 # Download results
-                results = pd.DataFrame({
-                    'Actual': y_test,
-                    'Predicted': y_pred
-                })
+                results = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
                 csv = results.to_csv(index=False).encode('utf-8')
                 st.download_button("💾 Download Predictions", csv, 
                                   "predictions.csv", "text/csv")
