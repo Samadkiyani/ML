@@ -89,7 +89,7 @@ def main():
                         st.error("Invalid ticker or date range!")
                         return
                     df = df.reset_index()
-                    st.image("https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWczMW1rancwejdqcHFuY3V3M28zemY0ZnZ0MmJxNmdwbWhkbmg5dCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/iPj5oRtJzQGxwzuCKV/giphy.gif", 
+                    st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
                            caption="Market data loaded!")
             else:
                 if uploaded_file:
