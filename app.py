@@ -1,93 +1,199 @@
+# app.py
 import streamlit as st
-import pandas as pd
 import yfinance as yf
-import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+import pandas as pd
+import numpy as np
+import plotly.express as px
 from sklearn.linear_model import LinearRegression
-import requests
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
 from streamlit_lottie import st_lottie
+import requests
+from datetime import datetime
 
-st.set_page_config(page_title="Stock Price Predictor", layout="wide")
+# Configure page
+st.set_page_config(
+    page_title="FinVision Pro",
+    page_icon="💹",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Custom CSS styling
-st.markdown("""
-    <style>
-        .stButton > button {background-color: #007ACC; color: white; border-radius: 5px;}
-        .stDataFrame {border: 1px solid #ccc; border-radius: 5px;}
-    </style>
-    """, unsafe_allow_html=True)  # use unsafe_allow_html to apply CSS&#8203;:contentReference[oaicite:15]{index=15}
+# Lottie animations with fallback
+def load_lottie(url: str):
+    try:
+        r = requests.get(url, timeout=5)
+        return r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
 
-st.title("Stock Price Prediction App")
+ANIMATIONS = {
+    "main": "https://assets1.lottiefiles.com/packages/lf20_ysrn2iwp.json",
+    "success": "https://assets1.lottiefiles.com/packages/lf20_au03ianj.json",
+    "loading": "https://assets1.lottiefiles.com/packages/lf20_raiw2hpe.json",
+    "chart": "https://assets1.lottiefiles.com/packages/lf20_ujvx3qxj.json"
+}
 
-# Sidebar inputs: data source selection
-source = st.sidebar.radio("Select Data Source", ["Yahoo Finance", "CSV Upload"])
-if source == "Yahoo Finance":
-    ticker = st.sidebar.text_input("Stock Ticker", value="AAPL")
-    start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
-    end_date = st.sidebar.date_input("End Date", value=pd.to_datetime("2022-12-31"))
-    uploaded_file = None
-else:
-    uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-    ticker = None
-
-# Button to load data
-if st.button("Load Data"):
-    if source == "Yahoo Finance" and ticker:
-        # Download data from Yahoo Finance
-        data = yf.download(ticker, start=start_date, end=end_date)
-        st.success(f"Fetched data for {ticker} from {start_date} to {end_date}")
-    elif source == "CSV Upload" and uploaded_file is not None:
-        # Read uploaded CSV (streamlit gives a BytesIO)
-        data = pd.read_csv(uploaded_file, parse_dates=True, index_col=0)
-        st.success("CSV data loaded successfully")
+def show_animation(url: str, height=200):
+    anim = load_lottie(url)
+    if anim:
+        st_lottie(anim, height=height, key=f"anim_{url}")
     else:
-        st.error("Please select a valid data source and input.")
-        st.stop()
+        st.empty()
 
-    # Display raw data
-    st.subheader("Raw Data")
-    st.dataframe(data)
+# Custom CSS
+st.markdown("""
+<style>
+    .metric-card {
+        background: #f8fafc;
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stButton>button {
+        background: #4f46e5 !important;
+        transition: all 0.3s ease !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    # Clean data: drop missing values
-    df = data.dropna()
-    st.write("Data after dropping missing values:")
-    st.dataframe(df)
+def validate_dates(start: datetime, end: datetime):
+    if start >= end:
+        st.error("End date must be after start date")
+        return False
+    return True
 
-    # Feature engineering: compute 20-day and 50-day SMA
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    df['SMA_50'] = df['Close'].rolling(window=50).mean()
-    df = df.dropna()  # drop initial rows with NaN SMAs
-    st.write("Data with SMA_20 and SMA_50:")
-    st.dataframe(df[['Close', 'SMA_20', 'SMA_50']].head(50))
+def main():
+    st.session_state.setdefault('data', None)
+    st.session_state.setdefault('steps', {'loaded': False, 'processed': False})
 
-    # Split into train/test sets (80/20 split, no shuffle)&#8203;:contentReference[oaicite:16]{index=16}
-    train_df, test_df = train_test_split(df, test_size=0.2, shuffle=False)
-    X_train = train_df[['SMA_20', 'SMA_50']]
-    y_train = train_df['Close']
-    X_test = test_df[['SMA_20', 'SMA_50']]
-    y_test = test_df['Close']
+    # Animated Header
+    with st.container():
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            show_animation(ANIMATIONS["main"], height=250)
+        with col2:
+            st.title("📈 FinVision Pro")
+            st.markdown("---")
 
-    # Train Linear Regression model&#8203;:contentReference[oaicite:17]{index=17}
-    model = LinearRegression()
-    model.fit(X_train, y_train)
+    # Sidebar Configuration
+    with st.sidebar:
+        show_animation(ANIMATIONS["chart"], height=120)
+        st.header("Settings")
+        data_source = st.radio("Data Source", ["Yahoo Finance", "Upload CSV"])
+        
+        if data_source == "Yahoo Finance":
+            ticker = st.text_input("Stock Symbol", "AAPL").upper()
+            start_date = st.date_input("Start Date", pd.to_datetime('2020-01-01'))
+            end_date = st.date_input("End Date")
+            if not validate_dates(start_date, end_date):
+                return
+        else:
+            uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
-    # Predict on test set and flatten predictions to 1D array&#8203;:contentReference[oaicite:18]{index=18}
-    y_pred = model.predict(X_test).flatten()
+    # Data Loading
+    if not st.session_state.steps['loaded']:
+        with st.container():
+            if st.button("🚀 Load Data"):
+                try:
+                    with st.spinner("Loading..."):
+                        show_animation(ANIMATIONS["loading"], height=100)
+                        
+                        if data_source == "Yahoo Finance":
+                            df = yf.download(ticker, start=start_date, end=end_date)
+                            df = df.reset_index()  # Ensure Date becomes a column
+                        else:
+                            df = pd.read_csv(uploaded_file, parse_dates=['Date'])
+                            df = df.set_index('Date')
+                        
+                        st.session_state.data = df.dropna()
+                        st.session_state.steps['loaded'] = True
+                        show_animation(ANIMATIONS["success"], height=100)
+                        st.dataframe(df.head())
+                        
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
 
-    # Prepare DataFrame for plotting actual vs predicted
-    result_df = pd.DataFrame({
-        "Actual": y_test.values,
-        "Predicted": y_pred
-    }, index=y_test.index)
+    # Data Processing Pipeline
+    if st.session_state.steps['loaded']:
+        df = st.session_state.data
+        
+        # Feature Engineering
+        if not st.session_state.steps['processed']:
+            with st.container():
+                if st.button("🔧 Generate Features"):
+                    with st.spinner("Creating features..."):
+                        df['SMA_20'] = df['Close'].rolling(20).mean()
+                        df['SMA_50'] = df['Close'].rolling(50).mean()
+                        st.session_state.data = df.dropna()
+                        st.session_state.steps['processed'] = True
+                        show_animation(ANIMATIONS["success"], height=100)
+                        st.dataframe(df.tail())
 
-    # Plot Actual vs Predicted line chart using Plotly
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=result_df.index, y=result_df['Actual'], name="Actual"))
-    fig.add_trace(go.Scatter(x=result_df.index, y=result_df['Predicted'], name="Predicted"))
-    fig.update_layout(title="Actual vs Predicted Close Price", xaxis_title="Date", yaxis_title="Price")
-    st.plotly_chart(fig, use_container_width=True)
+        # Model Training & Prediction
+        if st.session_state.steps['processed']:
+            with st.container():
+                if st.button("🤖 Run Analysis"):
+                    X = df[['SMA_20', 'SMA_50']]
+                    y = df['Close']
+                    
+                    # Data splitting with index handling
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.2, shuffle=False
+                    )
+                    
+                    # Model training
+                    model = LinearRegression().fit(X_train, y_train)
+                    y_pred = model.predict(X_test)
+                    
+                    # Ensure 1D arrays
+                    y_pred = y_pred.ravel()
+                    y_test = y_test.ravel()
+                    
+                    # Get dates correctly
+                    try:
+                        dates = df.loc[X_test.index, 'Date'].values
+                    except KeyError:
+                        dates = X_test.index.to_numpy()
 
-    # Show Lottie animation for success (example)
-    lottie_url = "https://assets2.lottiefiles.com/packages/lf20_q5pk6p1k.json"
-    lottie_json = requests.get(lottie_url).json()
-    st_lottie(lottie_json, height=200, key="success")  # e.g. a checkmark animation
+                    # Create comparison DataFrame with strict 1D arrays
+                    comparison_df = pd.DataFrame({
+                        'Date': dates.ravel(),    # Force 1D
+                        'Actual': y_test.ravel(),
+                        'Predicted': y_pred.ravel()
+                    }).melt(id_vars='Date', var_name='Type', value_name='Price')
+
+                    # Visualization
+                    fig = px.line(
+                        comparison_df,
+                        x='Date',
+                        y='Price',
+                        color='Type',
+                        title="Price Predictions",
+                        height=500
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Metrics
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h3>MSE</h3>
+                            <h2>{mean_squared_error(y_test, y_pred):.2f}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h3>R² Score</h3>
+                            <h2>{r2_score(y_test, y_pred):.2f}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    show_animation(ANIMATIONS["success"], height=100)
+
+if __name__ == "__main__":
+    main()
