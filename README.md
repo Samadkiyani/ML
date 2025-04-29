@@ -1,6 +1,6 @@
 # ML
 Machine Learning on Financial Data with Streamlit
-# Machine Learning Project – College Admission Prediction
+# Machine Learning Project
 
 ![th](https://github.com/user-attachments/assets/563746f7-eb6f-4cc5-8efa-5e7ba7115664)
 
