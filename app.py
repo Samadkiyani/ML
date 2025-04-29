@@ -178,7 +178,7 @@ def main():
             except Exception as e:
                 st.error(f"Feature engineering failed: {str(e)}")
 
-    # Step 4: Train/Test Split
+    # Step 4: Train/Test Split (Fixed Session State Update)
     if st.session_state.steps['features_created']:
         st.header("4. Data Split")
         
@@ -200,9 +200,9 @@ def main():
                     'X_test': X_test,
                     'y_train': y_train,
                     'y_test': y_test,
-                    'scaler': scaler,
-                    'steps.split': True
+                    'scaler': scaler
                 })
+                st.session_state.steps['split'] = True  # Corrected line
                 
                 st.write("### Dataset Split Visualization:")
                 split_df = pd.DataFrame({
