@@ -282,7 +282,7 @@ def main():
                                 template="plotly_white")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Feature importance
+               
                 if model_type == "Random Forest":
                     st.write("### Feature Importance:")
                     importance = model.feature_importances_
@@ -294,7 +294,7 @@ def main():
                                color_discrete_sequence=px.colors.qualitative.Pastel)
                     st.plotly_chart(fig, use_container_width=True)
 
-                # Download results
+                
                 results = pd.DataFrame({
                     'Actual': y_test,
                     'Predicted': y_pred
@@ -307,7 +307,7 @@ def main():
                 st.error(f"Evaluation failed: {str(e)}")
 
     st.markdown("---")
-    st.markdown("Built with ❤️ using Streamlit | [GitHub Repo](#)")
+    st.markdown("Built By Samad Kiani ❤ using Streamlit")
 
 def compute_rsi(prices, window=14):
     delta = prices.diff()
