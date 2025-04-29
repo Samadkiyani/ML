@@ -178,7 +178,7 @@ def main():
             except Exception as e:
                 st.error(f"Feature engineering failed: {str(e)}")
 
-    # Step 4: Train/Test Split (Fixed Session State Update)
+    # Step 4: Train/Test Split
     if st.session_state.steps['features_created']:
         st.header("4. Data Split")
         
@@ -186,7 +186,7 @@ def main():
             try:
                 df = st.session_state.data.copy()
                 X = df[['SMA_20', 'SMA_50', 'RSI']]
-                y = df['Close']
+                y = df['Close'].values  # Convert to numpy array
                 
                 # Feature scaling
                 scaler = StandardScaler()
@@ -202,7 +202,7 @@ def main():
                     'y_test': y_test,
                     'scaler': scaler
                 })
-                st.session_state.steps['split'] = True  # Corrected line
+                st.session_state.steps['split'] = True
                 
                 st.write("### Dataset Split Visualization:")
                 split_df = pd.DataFrame({
@@ -240,7 +240,7 @@ def main():
             except Exception as e:
                 st.error(f"Model training failed: {str(e)}")
 
-    # Step 6: Model Evaluation
+    # Step 6: Model Evaluation (Fixed Dimension Issue)
     if st.session_state.steps.get('trained'):
         st.header("6. Model Evaluation")
         
@@ -250,7 +250,13 @@ def main():
                 X_test = st.session_state.X_test
                 y_test = st.session_state.y_test
                 
-                y_pred = model.predict(X_test)
+                # Ensure 1D array for predictions
+                y_pred = model.predict(X_test).flatten()
+                
+                # Handle possible 2D arrays
+                if len(y_test.shape) > 1:
+                    y_test = y_test.ravel()
+                
                 st.session_state.predictions = y_pred
                 
                 # Metrics
@@ -262,16 +268,16 @@ def main():
                 
                 # Prediction plot
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=y_test.index, 
+                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), 
                                        y=y_test, 
                                        name='Actual', 
                                        line=dict(color='#2a4a7c')))
-                fig.add_trace(go.Scatter(x=y_test.index, 
+                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), 
                                        y=y_pred, 
                                        name='Predicted', 
                                        line=dict(color='#4CAF50')))
                 fig.update_layout(title="Actual vs Predicted Prices",
-                                xaxis_title="Time",
+                                xaxis_title="Index",
                                 yaxis_title="Price",
                                 template="plotly_white")
                 st.plotly_chart(fig, use_container_width=True)
@@ -289,7 +295,10 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
 
                 # Download results
-                results = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
+                results = pd.DataFrame({
+                    'Actual': y_test,
+                    'Predicted': y_pred
+                })
                 csv = results.to_csv(index=False).encode('utf-8')
                 st.download_button("💾 Download Predictions", csv, 
                                   "predictions.csv", "text/csv")
