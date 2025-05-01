@@ -1,4 +1,4 @@
-# app.py - Full Implementation with All Steps
+# app.py - Complete Financial ML Platform
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -11,7 +11,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-import joblib
 import datetime
 
 # Configure page
@@ -36,6 +35,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Backup tickers list
+BACKUP_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'BRK-B', 'META']
+
+def download_ticker_data(ticker, start_date, end_date):
+    """Helper function to download ticker data with validation"""
+    try:
+        df = yf.download(
+            ticker,
+            start=start_date - datetime.timedelta(days=3),
+            end=end_date + datetime.timedelta(days=3),
+            progress=False
+        )
+        df = df.loc[pd.to_datetime(start_date):pd.to_datetime(end_date)]
+        return df.reset_index()
+    except Exception as e:
+        raise ValueError(f"Failed to download {ticker}") from e
+
+def compute_rsi(prices, window=14):
+    """Calculate Relative Strength Index (RSI)"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    
+    avg_gain = gain.rolling(window).mean()
+    avg_loss = loss.rolling(window).mean()
+    
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
 def main():
     st.title("📈 FinML Pro - Financial Machine Learning Platform")
     st.markdown("---")
@@ -44,6 +72,7 @@ def main():
     session_defaults = {
         'data': None,
         'model': None,
+        'current_ticker': None,
         'steps': {
             'loaded': False,
             'processed': False,
@@ -80,7 +109,7 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Data Acquisition
+    # Step 1: Data Acquisition with Fallback
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
@@ -93,52 +122,41 @@ def main():
                     st.error(f"❌ Invalid ticker format: {ticker}")
                     return
 
+                # Weekend adjustment
                 adjusted_end_date = end_date
                 if end_date.weekday() >= 5:
                     adjusted_end_date = end_date - datetime.timedelta(days=end_date.weekday()-4)
                     st.markdown(f"<p class='weekend-adjust'>⚠️ Adjusted end date from {end_date} to {adjusted_end_date} (weekend)</p>", 
                               unsafe_allow_html=True)
 
-                with st.spinner("Verifying ticker..."):
+                # Try tickers in sequence
+                current_ticker = ticker
+                all_tickers = [current_ticker] + [t for t in BACKUP_TICKERS if t != current_ticker]
+                df = pd.DataFrame()
+                
+                for t in all_tickers:
                     try:
-                        ticker_check = yf.Ticker(ticker)
-                        if not ticker_check.history(period="1d").empty:
-                            st.success(f"✅ Valid ticker: {ticker}")
-                        else:
-                            st.error(f"❌ Invalid ticker: {ticker}")
-                            return
-                    except Exception as e:
-                        st.error(f"❌ Ticker verification failed: {str(e)}")
-                        return
+                        with st.spinner(f"Trying {t}..."):
+                            df = download_ticker_data(t, start_date, adjusted_end_date)
+                            current_ticker = t
+                            break
+                    except:
+                        continue
 
-                with st.spinner(f"Fetching {ticker} data..."):
-                    try:
-                        df = yf.download(
-                            ticker,
-                            start=start_date - datetime.timedelta(days=3),
-                            end=adjusted_end_date + datetime.timedelta(days=3),
-                            progress=False
-                        )
-                        df = df.loc[pd.to_datetime(start_date):pd.to_datetime(adjusted_end_date)]
-                        
-                        if df.empty:
-                            hist = yf.Ticker(ticker).history(period="max")
-                            if not hist.empty:
-                                last_date = hist.index[-1].date()
-                                st.error(f"⚠️ Last available date: {last_date}")
-                            else:
-                                st.error(f"❌ Ticker {ticker} not found!")
-                            return
-                            
-                        df = df.reset_index()
-                        st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
-                               caption="Market data loaded!")
+                if df.empty:
+                    st.error("❌ All tickers failed! Possible reasons:\n"
+                            "- Market closed\n- Invalid date range\n- Network issues")
+                    return
 
-                    except Exception as e:
-                        st.error(f"🚨 Download failed: {str(e)}")
-                        return
+                # If fallback was used
+                if current_ticker != ticker:
+                    st.warning(f"⚠️ Using backup ticker: {current_ticker}")
+                    st.session_state.current_ticker = current_ticker
 
-            else:
+                st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
+                       caption="Market data loaded!")
+
+            else:  # CSV handling
                 if uploaded_file:
                     df = pd.read_csv(uploaded_file)
                     if {'Date', 'Close'}.issubset(df.columns):
@@ -151,9 +169,15 @@ def main():
                     st.warning("⚠️ Please upload a CSV file!")
                     return
 
+            # Final validation
+            if df.empty:
+                st.error("Loaded empty dataset!")
+                return
+
             st.session_state.data = df.sort_values('Date')
             st.session_state.steps['loaded'] = True
             
+            # Display data summary
             st.write(f"### Data Preview ({len(df)} rows)")
             st.dataframe(df.head().style.format("{:.2f}"), height=250)
             st.write(f"Date Range: {df['Date'].min().date()} to {df['Date'].max().date()}")
@@ -377,17 +401,6 @@ def main():
 
             except Exception as e:
                 st.error(f"Evaluation failed: {str(e)}")
-
-def compute_rsi(prices, window=14):
-    delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).fillna(0)
-    loss = (-delta.where(delta < 0, 0)).fillna(0)
-    
-    avg_gain = gain.rolling(window).mean()
-    avg_loss = loss.rolling(window).mean()
-    
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
 
 if __name__ == "__main__":
     main()
