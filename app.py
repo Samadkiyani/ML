@@ -1,4 +1,4 @@
-# app.py
+# app.py - Full Implementation
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -62,7 +62,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL").strip().upper()
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
@@ -78,36 +78,61 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Load Data
+    # Step 1: Data Acquisition
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
             if data_source == "Yahoo Finance":
-                with st.spinner("Fetching market data..."):
-                    df = yf.download(ticker, start=start_date, end=end_date)
-                    if df.empty:
-                        st.error("Invalid ticker or date range!")
+                if start_date > end_date:
+                    st.error("⛔ Error: Start date cannot be after end date!")
+                    return
+                
+                with st.spinner("Verifying ticker..."):
+                    ticker_check = yf.Ticker(ticker)
+                    if ticker_check.history(period="1d").empty:
+                        st.error(f"❌ Invalid or delisted ticker: {ticker}")
                         return
+                
+                with st.spinner(f"Fetching {ticker} data..."):
+                    df = yf.download(
+                        ticker, 
+                        start=start_date, 
+                        end=end_date + datetime.timedelta(days=1),
+                        progress=False
+                    )
+                    
+                    if df.empty:
+                        st.error(f"⚠️ No data found for {ticker}!")
+                        return
+                        
                     df = df.reset_index()
                     st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
                            caption="Market data loaded!")
+
             else:
                 if uploaded_file:
-                    df = pd.read_csv(uploaded_file).reset_index(drop=True)
-                    st.success("CSV file loaded successfully!")
+                    df = pd.read_csv(uploaded_file)
+                    if {'Date', 'Close'}.issubset(df.columns):
+                        df['Date'] = pd.to_datetime(df['Date'])
+                        st.success("✅ CSV loaded successfully!")
+                    else:
+                        st.error("Missing required columns (Date/Close)")
+                        return
                 else:
-                    st.warning("Please upload a CSV file!")
+                    st.warning("⚠️ Please upload a CSV file!")
                     return
 
-            st.session_state.data = df
+            st.session_state.data = df.sort_values('Date')
             st.session_state.steps['loaded'] = True
-            st.write("### Data Preview:")
-            st.dataframe(df.head().style.format("{:.2f}"), height=200)
             
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
+            st.write(f"### Data Preview ({len(df)} rows)")
+            st.dataframe(df.head().style.format("{:.2f}"), height=250)
+            st.write(f"Date Range: {df['Date'].min().date()} to {df['Date'].max().date()}")
 
-    # Step 2: Preprocessing
+        except Exception as e:
+            st.error(f"🚨 Data loading failed: {str(e)}")
+
+    # Step 2: Data Preprocessing
     if st.session_state.steps['loaded']:
         st.header("2. Data Preprocessing")
         col1, col2 = st.columns(2)
@@ -115,29 +140,38 @@ def main():
         with col1:
             if st.button("🧹 Clean Data"):
                 try:
+                    if st.session_state.data is None:
+                        st.error("No data loaded! Complete Step 1 first.")
+                        return
+                        
                     df = st.session_state.data.copy()
                     
+                    if 'Date' not in df.columns or 'Close' not in df.columns:
+                        st.error("Invalid dataset structure!")
+                        return
+
                     st.write("### Missing Values Analysis:")
                     missing = pd.DataFrame({
                         'Feature': df.columns,
                         'Missing Values': df.isnull().sum().values
                     })
                     
-                    fig = px.bar(missing, 
-                                x='Missing Values', 
-                                y='Feature',
-                                orientation='h',
-                                labels={'Feature': 'Features', 'Missing Values': 'Count'},
-                                color='Feature',
+                    fig = px.bar(missing, x='Missing Values', y='Feature',
+                                orientation='h', color='Feature',
                                 color_discrete_sequence=['#2a4a7c'])
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Clean data
+                    initial_count = len(df)
                     df = df.dropna().reset_index(drop=True)
+                    final_count = len(df)
+                    
+                    if final_count == 0:
+                        st.error("Data cleaning removed all records!")
+                        return
                     
                     st.session_state.data = df
                     st.session_state.steps['processed'] = True
-                    st.success("Data cleaning completed! Missing values removed.")
+                    st.success(f"Cleaned data: {final_count} rows remaining")
 
                 except Exception as e:
                     st.error(f"Data cleaning failed: {str(e)}")
@@ -147,9 +181,12 @@ def main():
                 try:
                     st.write("### Cleaned Data Statistics:")
                     clean_df = st.session_state.data
-                    st.dataframe(clean_df.describe().style.format("{:.2f}"), height=300)
+                    stats = clean_df.describe()
+                    stats.loc['skew'] = clean_df.skew(numeric_only=True)
+                    stats.loc['kurtosis'] = clean_df.kurtosis(numeric_only=True)
+                    st.dataframe(stats.style.format("{:.2f}"), height=350)
                 except Exception as e:
-                    st.error(f"Error displaying statistics: {str(e)}")
+                    st.error(f"Error displaying stats: {str(e)}")
 
     # Step 3: Feature Engineering
     if st.session_state.steps['processed']:
@@ -159,41 +196,54 @@ def main():
             try:
                 df = st.session_state.data.copy()
                 
-                # Technical indicators
-                df['SMA_20'] = df['Close'].rolling(20).mean()
-                df['SMA_50'] = df['Close'].rolling(50).mean()
-                df['RSI'] = compute_rsi(df['Close'])
-                df = df.dropna().reset_index(drop=True)
-                
-                st.session_state.data = df
-                st.session_state.steps['features_created'] = True
-                
-                st.write("### Feature Correlation Matrix:")
-                corr_matrix = df.corr()
-                fig = px.imshow(corr_matrix, 
-                              text_auto=".2f", 
-                              color_continuous_scale='Blues')
-                st.plotly_chart(fig, use_container_width=True)
+                if len(df) < 50:
+                    st.error("Need at least 50 data points!")
+                    return
+                    
+                with st.spinner("Calculating technical indicators..."):
+                    df['SMA_20'] = df['Close'].rolling(20).mean()
+                    df['SMA_50'] = df['Close'].rolling(50).mean()
+                    df['RSI'] = compute_rsi(df['Close'])
+                    df = df.dropna().reset_index(drop=True)
+                    
+                    if len(df) < 30:
+                        st.error("Too many NaN values after feature creation!")
+                        return
+                        
+                    st.session_state.data = df
+                    st.session_state.steps['features_created'] = True
+                    
+                    st.write("### Feature Correlation Matrix:")
+                    corr_matrix = df.corr()
+                    fig = px.imshow(corr_matrix, text_auto=".2f", 
+                                    color_continuous_scale='Blues')
+                    st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
                 st.error(f"Feature engineering failed: {str(e)}")
 
-    # Step 4: Train/Test Split
+    # Step 4: Data Split
     if st.session_state.steps['features_created']:
         st.header("4. Data Split")
         
         if st.button("✂️ Split Dataset"):
             try:
                 df = st.session_state.data.copy()
-                X = df[['SMA_20', 'SMA_50', 'RSI']]
+                required_features = ['SMA_20', 'SMA_50', 'RSI']
+                missing_features = [f for f in required_features if f not in df.columns]
+                if missing_features:
+                    st.error(f"Missing features: {', '.join(missing_features)}")
+                    return
+                    
+                X = df[required_features]
                 y = df['Close'].values  
                 
-                # Feature scaling
                 scaler = StandardScaler()
                 X_scaled = scaler.fit_transform(X)
                 
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X_scaled, y, test_size=test_size, shuffle=False)
+                split_index = int(len(X_scaled) * (1 - test_size))
+                X_train, X_test = X_scaled[:split_index], X_scaled[split_index:]
+                y_train, y_test = y[:split_index], y[split_index:]
                 
                 st.session_state.update({
                     'X_train': X_train,
@@ -209,9 +259,7 @@ def main():
                     'Set': ['Train', 'Test'],
                     'Count': [len(X_train), len(X_test)]
                 })
-                fig = px.pie(split_df, 
-                            values='Count', 
-                            names='Set', 
+                fig = px.pie(split_df, values='Count', names='Set', 
                             color_discrete_sequence=['#2a4a7c', '#3b6ea5'])
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -224,10 +272,14 @@ def main():
         
         if st.button("🎯 Train Model"):
             try:
+                if not st.session_state.get('X_train'):
+                    st.error("Training data not found!")
+                    return
+                    
                 if model_type == "Linear Regression":
                     model = LinearRegression()
                 else:
-                    model = RandomForestRegressor(n_estimators=100)
+                    model = RandomForestRegressor(n_estimators=100, random_state=42)
                 
                 with st.spinner("Training in progress..."):
                     model.fit(st.session_state.X_train, st.session_state.y_train)
@@ -240,7 +292,7 @@ def main():
             except Exception as e:
                 st.error(f"Model training failed: {str(e)}")
 
-    # Step 6: Model Evaluation (Fixed Dimension Issue)
+    # Step 6: Model Evaluation
     if st.session_state.steps.get('trained'):
         st.header("6. Model Evaluation")
         
@@ -250,55 +302,44 @@ def main():
                 X_test = st.session_state.X_test
                 y_test = st.session_state.y_test
                 
-                # Ensure 1D array for predictions
+                if model is None or X_test is None:
+                    st.error("Missing model or test data!")
+                    return
+                    
                 y_pred = model.predict(X_test).flatten()
-                
-                # Handle possible 2D arrays
                 if len(y_test.shape) > 1:
                     y_test = y_test.ravel()
                 
                 st.session_state.predictions = y_pred
                 
-                # Metrics
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
+                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                    st.metric("RMSE", f"{rmse:.2f}")
                 with col2:
-                    st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+                    r2 = r2_score(y_test, y_pred)
+                    st.metric("R² Score", f"{r2:.2f}")
                 
-                # Prediction plot
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), 
-                                       y=y_test, 
-                                       name='Actual', 
-                                       line=dict(color='#2a4a7c')))
-                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), 
-                                       y=y_pred, 
-                                       name='Predicted', 
-                                       line=dict(color='#4CAF50')))
+                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), y=y_test, 
+                            name='Actual', line=dict(color='#2a4a7c')))
+                fig.add_trace(go.Scatter(x=np.arange(len(y_test)), y=y_pred,
+                            name='Predicted', line=dict(color='#4CAF50')))
                 fig.update_layout(title="Actual vs Predicted Prices",
                                 xaxis_title="Index",
-                                yaxis_title="Price",
-                                template="plotly_white")
+                                yaxis_title="Price")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Feature importance
                 if model_type == "Random Forest":
                     st.write("### Feature Importance:")
                     importance = model.feature_importances_
                     features = ['SMA_20', 'SMA_50', 'RSI']
-                    fig = px.bar(x=features, 
-                               y=importance, 
-                               labels={'x': 'Features', 'y': 'Importance'},
-                               color=features, 
-                               color_discrete_sequence=px.colors.qualitative.Pastel)
+                    fig = px.bar(x=features, y=importance, 
+                                color=features, 
+                                color_discrete_sequence=px.colors.qualitative.Pastel)
                     st.plotly_chart(fig, use_container_width=True)
 
-                # Download results
-                results = pd.DataFrame({
-                    'Actual': y_test,
-                    'Predicted': y_pred
-                })
+                results = pd.DataFrame({'Actual': y_test, 'Predicted': y_pred})
                 csv = results.to_csv(index=False).encode('utf-8')
                 st.download_button("💾 Download Predictions", csv, 
                                   "predictions.csv", "text/csv")
@@ -306,14 +347,15 @@ def main():
             except Exception as e:
                 st.error(f"Evaluation failed: {str(e)}")
 
-    st.markdown("---")
-    st.markdown("Built by samadKiani ❤️ using Streamlit")
-
 def compute_rsi(prices, window=14):
     delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
-    rs = gain / loss
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    
+    avg_gain = gain.rolling(window).mean()
+    avg_loss = loss.rolling(window).mean()
+    
+    rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
 if __name__ == "__main__":
