@@ -1,9 +1,11 @@
-# app.py - Complete Financial ML Platform
+# app.py - Complete Financial ML Platform with Rate Limiting
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import re
+import time
+import random
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
@@ -35,22 +37,39 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Backup tickers list
-BACKUP_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'BRK-B', 'META']
+# Rate limiting parameters
+MAX_RETRIES = 3
+BASE_DELAY = 2.5  # Base delay in seconds
+JITTER = 1.0       # Random delay variation
+BACKUP_TICKERS = ['AAPL', 'MSFT', 'GOOGL']  # Reduced list for fewer requests
 
-def download_ticker_data(ticker, start_date, end_date):
-    """Helper function to download ticker data with validation"""
-    try:
-        df = yf.download(
-            ticker,
-            start=start_date - datetime.timedelta(days=3),
-            end=end_date + datetime.timedelta(days=3),
-            progress=False
-        )
-        df = df.loc[pd.to_datetime(start_date):pd.to_datetime(end_date)]
-        return df.reset_index()
-    except Exception as e:
-        raise ValueError(f"Failed to download {ticker}") from e
+def safe_download(ticker, start_date, end_date):
+    """Enhanced download function with rate limit handling"""
+    for attempt in range(MAX_RETRIES):
+        try:
+            # Randomized delay with jitter
+            delay = BASE_DELAY + random.uniform(0, JITTER)
+            time.sleep(delay)
+            
+            df = yf.download(
+                ticker,
+                start=start_date - datetime.timedelta(days=3),
+                end=end_date + datetime.timedelta(days=3),
+                progress=False,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+                }
+            )
+            df = df.loc[pd.to_datetime(start_date):pd.to_datetime(end_date)]
+            return df.reset_index()
+        except Exception as e:
+            if "YFRateLimitError" in str(e) and attempt < MAX_RETRIES - 1:
+                retry_delay = (BASE_DELAY * 2) ** attempt  # Exponential backoff
+                st.warning(f"⚠️ Rate limited. Retrying in {retry_delay:.1f}s...")
+                time.sleep(retry_delay)
+                continue
+            raise
+    raise ValueError(f"Failed to download {ticker} after {MAX_RETRIES} attempts")
 
 def compute_rsi(prices, window=14):
     """Calculate Relative Strength Index (RSI)"""
@@ -109,7 +128,7 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Data Acquisition with Fallback
+    # Step 1: Data Acquisition with Rate Limiting
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
@@ -122,33 +141,32 @@ def main():
                     st.error(f"❌ Invalid ticker format: {ticker}")
                     return
 
-                # Weekend adjustment
                 adjusted_end_date = end_date
                 if end_date.weekday() >= 5:
                     adjusted_end_date = end_date - datetime.timedelta(days=end_date.weekday()-4)
                     st.markdown(f"<p class='weekend-adjust'>⚠️ Adjusted end date from {end_date} to {adjusted_end_date} (weekend)</p>", 
                               unsafe_allow_html=True)
 
-                # Try tickers in sequence
                 current_ticker = ticker
                 all_tickers = [current_ticker] + [t for t in BACKUP_TICKERS if t != current_ticker]
                 df = pd.DataFrame()
                 
                 for t in all_tickers:
                     try:
-                        with st.spinner(f"Trying {t}..."):
-                            df = download_ticker_data(t, start_date, adjusted_end_date)
+                        with st.spinner(f"Fetching {t}..."):
+                            df = safe_download(t, start_date, adjusted_end_date)
                             current_ticker = t
                             break
-                    except:
+                    except Exception as e:
+                        if "YFRateLimitError" in str(e):
+                            st.error("❌ Yahoo Finance rate limit reached. Please try again later.")
+                            return
                         continue
 
                 if df.empty:
-                    st.error("❌ All tickers failed! Possible reasons:\n"
-                            "- Market closed\n- Invalid date range\n- Network issues")
+                    st.error("❌ All tickers failed! Try smaller date range or CSV upload")
                     return
 
-                # If fallback was used
                 if current_ticker != ticker:
                     st.warning(f"⚠️ Using backup ticker: {current_ticker}")
                     st.session_state.current_ticker = current_ticker
@@ -156,28 +174,26 @@ def main():
                 st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
                        caption="Market data loaded!")
 
-            else:  # CSV handling
+            else:
                 if uploaded_file:
-                    df = pd.read_csv(uploaded_file)
-                    if {'Date', 'Close'}.issubset(df.columns):
-                        df['Date'] = pd.to_datetime(df['Date'])
-                        st.success("✅ CSV loaded successfully!")
-                    else:
-                        st.error("Missing required columns (Date/Close)")
+                    try:
+                        df = pd.read_csv(uploaded_file)
+                        if {'Date', 'Close'}.issubset(df.columns):
+                            df['Date'] = pd.to_datetime(df['Date'])
+                            st.success("✅ CSV loaded successfully!")
+                        else:
+                            st.error("Missing required columns (Date/Close)")
+                            return
+                    except Exception as e:
+                        st.error(f"CSV loading failed: {str(e)}")
                         return
                 else:
                     st.warning("⚠️ Please upload a CSV file!")
                     return
 
-            # Final validation
-            if df.empty:
-                st.error("Loaded empty dataset!")
-                return
-
             st.session_state.data = df.sort_values('Date')
             st.session_state.steps['loaded'] = True
             
-            # Display data summary
             st.write(f"### Data Preview ({len(df)} rows)")
             st.dataframe(df.head().style.format("{:.2f}"), height=250)
             st.write(f"Date Range: {df['Date'].min().date()} to {df['Date'].max().date()}")
@@ -191,6 +207,7 @@ def main():
             3. Check for exchange suffixes (.TO, .L)
             4. Avoid recent dates""")
 
+    # Steps 2-6 (Same as previous implementation)
     # Step 2: Data Preprocessing
     if st.session_state.steps['loaded']:
         st.header("2. Data Preprocessing")
