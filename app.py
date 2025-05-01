@@ -62,7 +62,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "TSLA")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
@@ -186,7 +186,7 @@ def main():
             try:
                 df = st.session_state.data.copy()
                 X = df[['SMA_20', 'SMA_50', 'RSI']]
-                y = df['Close'].values  # Convert to numpy array
+                y = df['Close'].values  
                 
                 # Feature scaling
                 scaler = StandardScaler()
