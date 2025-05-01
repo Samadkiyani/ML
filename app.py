@@ -16,6 +16,7 @@ import time
 from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # Configure page
 st.set_page_config(
@@ -36,6 +37,7 @@ st.markdown("""
     .stAlert {border-radius: 5px;}
     .sidebar .sidebar-content {background-color: #e8f4f8;}
     .error-box {border-left: 4px solid #ff4b4b; padding: 10px; background-color: #ffe6e6;}
+    .warning-box {border-left: 4px solid #FFA500; padding: 10px; background-color: #fff4e6;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -53,19 +55,79 @@ session.headers.update({
 })
 session.mount('https://', HTTPAdapter(max_retries=retry))
 
+# Holiday calendar setup
+cal = USFederalHolidayCalendar()
+
+def is_market_open(date):
+    """Check if date was a trading day"""
+    try:
+        test_data = yf.download('AAPL', 
+                              start=date, 
+                              end=date + datetime.timedelta(days=1),
+                              progress=False)
+        return not test_data.empty
+    except Exception:
+        return False
+
+def get_market_status():
+    """Check current market status"""
+    ny_tz = pytz.timezone("America/New_York")
+    now = datetime.datetime.now(ny_tz)
+    today = now.date()
+    open_time = datetime.time(9, 30)
+    close_time = datetime.time(16, 0)
+    
+    if now.weekday() >= 5:  # Weekend
+        next_open = today + datetime.timedelta(days=(7 - now.weekday()))
+        return "closed", f"Next open: {next_open.strftime('%Y-%m-%d')} 09:30 AM ET"
+    
+    market_open = ny_tz.localize(datetime.datetime.combine(today, open_time))
+    market_close = ny_tz.localize(datetime.datetime.combine(today, close_time))
+    
+    if market_open <= now <= market_close and is_market_open(today):
+        time_left = market_close - now
+        return "open", f"Closes in {time_left.seconds//3600}h {(time_left.seconds//60)%60}m"
+    else:
+        next_open = today + datetime.timedelta(days=1)
+        while next_open.weekday() >= 5 or not is_market_open(next_open):
+            next_open += datetime.timedelta(days=1)
+        return "closed", f"Next open: {next_open.strftime('%Y-%m-%d')} 09:30 AM ET"
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_yfinance_data(ticker, start_date, end_date):
-    """Fetch data with retry logic and caching"""
+    """Fetch data with market validation"""
+    # Adjust for non-trading days
+    adjusted_end = end_date
+    for _ in range(5):  # Check up to 5 days back
+        if is_market_open(adjusted_end):
+            break
+        adjusted_end -= datetime.timedelta(days=1)
+    
+    # Validate date range
+    if start_date > adjusted_end:
+        st.markdown(f"""
+        <div class='error-box'>
+        <h3>❌ Invalid Date Range</h3>
+        <p>No valid trading days between {start_date} and {end_date}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return None
+
+    # Check holidays
+    holidays = cal.holidays(start=start_date, end=adjusted_end).date.tolist()
+    if holidays:
+        st.markdown(f"""
+        <div class='warning-box'>
+        <h3>⚠️ Market Holidays Detected</h3>
+        <p>Holidays in range: {', '.join([str(h) for h in holidays])}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
     try:
-        # Auto-adjust future dates
-        today = datetime.date.today()
-        if end_date > today:
-            end_date = today
-        
         data = yf.download(
             ticker,
             start=start_date,
-            end=end_date + datetime.timedelta(days=1),  # Add buffer
+            end=adjusted_end + datetime.timedelta(days=1),  # Add buffer
             session=session,
             auto_adjust=True
         )
@@ -74,12 +136,12 @@ def fetch_yfinance_data(ticker, start_date, end_date):
             st.markdown(f"""
             <div class='error-box'>
             <h3>🚨 No Data Found for {ticker}</h3>
-            <p>Between {start_date} and {end_date}</p>
+            <p>Between {start_date} and {adjusted_end}</p>
             <p>Possible reasons:</p>
             <ul>
                 <li>Market closed during selected period</li>
                 <li>Delisted company</li>
-                <li>Non-trading days selected</li>
+                <li>Data provider issues</li>
             </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -132,8 +194,30 @@ def main():
         
         if data_source == "Yahoo Finance":
             ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL").strip().upper()
-            start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
-            end_date = st.date_input("End Date:", datetime.date.today())
+            
+            # Date inputs with validation
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input(
+                    "Start Date:",
+                    datetime.date(2020, 1, 2),  # First trading day of 2020
+                    min_value=datetime.date(1990, 1, 1),
+                    max_value=datetime.date.today(),
+                    help="Select a market open date (Mon-Fri, non-holiday)"
+                )
+            with col2:
+                end_date = st.date_input(
+                    "End Date:",
+                    datetime.date.today() - datetime.timedelta(days=1),  # Previous trading day
+                    min_value=datetime.date(1990, 1, 1),
+                    max_value=datetime.date.today(),
+                    help="Select a market open date (Mon-Fri, non-holiday)"
+                )
+            
+            # Market status display
+            market_status, status_msg = get_market_status()
+            st.caption(f"📈 Market Status: **{market_status.upper()}** ({status_msg})")
+            
         else:
             uploaded_file = st.file_uploader("Upload Dataset:", type=["csv"])
         
@@ -147,7 +231,7 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Load Data with Enhanced Error Handling
+    # Step 1: Load Data with Enhanced Validation
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         st.session_state.download_count += 1
@@ -185,10 +269,8 @@ def main():
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
 
-    # [Rest of your original code remains unchanged...]
-
-    # Steps 2-6 (Preprocessing, Feature Engineering, etc.) remain identical
-    # to your original code
+    # Rest of your original processing steps remain unchanged
+    # [Keep Steps 2-6 from your original code]
 
     st.markdown("---")
     st.markdown("Built with ❤️ using Streamlit | [GitHub Repo](#)")
