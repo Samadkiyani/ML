@@ -286,7 +286,7 @@ def main():
                     fig = px.bar(missing, 
                                 x='Missing Values', 
                                 y='Feature',
-                                orientation='h",
+                                orientation='h',
                                 labels={'Feature': 'Features', 'Missing Values': 'Count'},
                                 color='Feature',
                                 color_discrete_sequence=['#2a4a7c'])
