@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 import joblib
 import datetime
+import pytz
 
 # Configure page
 st.set_page_config(
@@ -25,14 +26,23 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main {background-color: #f9f9f9;}
-    h1 {color: #2a4a7c; border-bottom: 2px solid #2a4a7c;}
-    h2 {color: #3b6ea5;}
-    .stButton>button {background-color: #2a4a7c; color: white; border-radius: 5px;}
-    .stDownloadButton>button {background-color: #4CAF50; color: white;}
-    .stAlert {border-radius: 5px;}
-    .sidebar .sidebar-content {background-color: #e8f4f8;}
+    .stAlert {border-radius: 5px; padding: 20px;}
+    .error-box {border-left: 4px solid #ff4b4b; padding: 10px; background-color: #ffe6e6;}
+    .success-box {border-left: 4px solid #4CAF50; padding: 10px; background-color: #e8f5e9;}
 </style>
 """, unsafe_allow_html=True)
+
+def validate_ticker(ticker):
+    """Enhanced ticker validation with multiple checks"""
+    try:
+        # Check historical data for multiple time periods
+        for period in ["1d", "5d", "1mo"]:
+            data = yf.download(ticker, period=period, progress=False)
+            if not data.empty:
+                return True
+        return False
+    except Exception:
+        return False
 
 def main():
     st.title("📈 FinML Pro - Financial Machine Learning Platform")
@@ -62,7 +72,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL").strip().upper()
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
@@ -78,34 +88,104 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Load Data
+    # Step 1: Load Data with Advanced Validation
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
             if data_source == "Yahoo Finance":
                 with st.spinner("Fetching market data..."):
-                    df = yf.download(ticker, start=start_date, end=end_date)
-                    if df.empty:
-                        st.error("Invalid ticker or date range!")
+                    # Validate ticker first
+                    if not validate_ticker(ticker):
+                        st.markdown(f"""
+                        <div class='error-box'>
+                        <h3>❌ Ticker Validation Failed: {ticker}</h3>
+                        <p>Possible solutions:</p>
+                        <ol>
+                            <li>Check ticker symbol on <a href="https://finance.yahoo.com" target="_blank">Yahoo Finance</a></li>
+                            <li>Try different date range</li>
+                            <li>Check regional restrictions (try VPN)</li>
+                            <li>Update yfinance: <code>pip install yfinance --upgrade</code></li>
+                        </ol>
+                        </div>
+                        """, unsafe_allow_html=True)
                         return
+
+                    # Handle timezone-aware dates
+                    ny_tz = pytz.timezone("America/New_York")
+                    today = datetime.datetime.now(ny_tz).date()
+                    
+                    # Auto-adjust future dates
+                    if end_date > today:
+                        st.warning(f"⚠️ Adjusted end date to today ({today})")
+                        end_date = today
+
+                    # Convert to timezone-aware datetimes
+                    start_dt = ny_tz.localize(datetime.datetime.combine(start_date, datetime.time(9, 30)))
+                    end_dt = ny_tz.localize(datetime.datetime.combine(end_date, datetime.time(16, 0))) + datetime.timedelta(days=1)
+                    
+                    # Download data with retry logic
+                    try:
+                        df = yf.download(ticker, start=start_dt, end=end_dt, auto_adjust=True)
+                    except Exception as e:
+                        st.error(f"First download attempt failed: {str(e)}. Retrying...")
+                        df = yf.download(ticker, start=start_dt, end=end_dt, auto_adjust=True)
+
+                    if df.empty:
+                        st.markdown(f"""
+                        <div class='error-box'>
+                        <h3>🚨 No Data Found for {ticker}</h3>
+                        <p>Between {start_date} and {end_date}</p>
+                        <p>Possible reasons:</p>
+                        <ul>
+                            <li>Market closed during selected period</li>
+                            <li>Delisted company</li>
+                            <li>Non-trading days selected</li>
+                        </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        return
+
                     df = df.reset_index()
-                    st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
-                           caption="Market data loaded!")
+                    st.session_state.data = df
+                    st.session_state.steps['loaded'] = True
+                    st.markdown(f"""
+                    <div class='success-box'>
+                    <h3>✅ Successfully loaded {len(df)} trading days of data!</h3>
+                    <p>Ticker: {ticker} | Date Range: {start_date} to {end_date}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.dataframe(df.head().style.format("{:.2f}"), height=200)
+
             else:
                 if uploaded_file:
-                    df = pd.read_csv(uploaded_file).reset_index(drop=True)
+                    df = pd.read_csv(uploaded_file)
+                    if df.empty:
+                        st.error("Uploaded CSV file is empty!")
+                        return
+                    if 'Date' in df.columns:
+                        df['Date'] = pd.to_datetime(df['Date'])
+                    st.session_state.data = df
+                    st.session_state.steps['loaded'] = True
                     st.success("CSV file loaded successfully!")
+                    st.dataframe(df.head().style.format("{:.2f}"), height=200)
                 else:
                     st.warning("Please upload a CSV file!")
                     return
 
-            st.session_state.data = df
-            st.session_state.steps['loaded'] = True
-            st.write("### Data Preview:")
-            st.dataframe(df.head().style.format("{:.2f}"), height=200)
-            
         except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
+            st.markdown(f"""
+            <div class='error-box'>
+            <h3>🔥 Critical Error</h3>
+            <p>{str(e)}</p>
+            <p>Troubleshooting steps:</p>
+            <ol>
+                <li>Check internet connection</li>
+                <li>Try different ticker/date range</li>
+                <li>Restart the application</li>
+                <li>Contact support</li>
+            </ol>
+            </div>
+            """, unsafe_allow_html=True)
 
     # Step 2: Preprocessing
     if st.session_state.steps['loaded']:
@@ -240,7 +320,7 @@ def main():
             except Exception as e:
                 st.error(f"Model training failed: {str(e)}")
 
-    # Step 6: Model Evaluation (Fixed Dimension Issue)
+    # Step 6: Model Evaluation
     if st.session_state.steps.get('trained'):
         st.header("6. Model Evaluation")
         
@@ -282,7 +362,7 @@ def main():
                                 template="plotly_white")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Feature importance
+               
                 if model_type == "Random Forest":
                     st.write("### Feature Importance:")
                     importance = model.feature_importances_
@@ -294,7 +374,7 @@ def main():
                                color_discrete_sequence=px.colors.qualitative.Pastel)
                     st.plotly_chart(fig, use_container_width=True)
 
-                # Download results
+                
                 results = pd.DataFrame({
                     'Actual': y_test,
                     'Predicted': y_pred
@@ -307,7 +387,7 @@ def main():
                 st.error(f"Evaluation failed: {str(e)}")
 
     st.markdown("---")
-    st.markdown("Built by samad Kiani ❤️ using Streamlit")
+    st.markdown("Built By Samad Kiani ❤ using Streamlit")
 
 def compute_rsi(prices, window=14):
     delta = prices.diff()
