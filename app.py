@@ -1,8 +1,9 @@
-# app.py - Full Implementation
+# app.py - Full Implementation with All Steps
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import re
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
@@ -31,6 +32,7 @@ st.markdown("""
     .stDownloadButton>button {background-color: #4CAF50; color: white;}
     .stAlert {border-radius: 5px;}
     .sidebar .sidebar-content {background-color: #e8f4f8;}
+    .weekend-adjust {color: #d35400; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,28 +88,55 @@ def main():
                 if start_date > end_date:
                     st.error("⛔ Error: Start date cannot be after end date!")
                     return
-                
+
+                if not re.match(r"^[A-Za-z.-]{1,10}$", ticker):
+                    st.error(f"❌ Invalid ticker format: {ticker}")
+                    return
+
+                adjusted_end_date = end_date
+                if end_date.weekday() >= 5:
+                    adjusted_end_date = end_date - datetime.timedelta(days=end_date.weekday()-4)
+                    st.markdown(f"<p class='weekend-adjust'>⚠️ Adjusted end date from {end_date} to {adjusted_end_date} (weekend)</p>", 
+                              unsafe_allow_html=True)
+
                 with st.spinner("Verifying ticker..."):
-                    ticker_check = yf.Ticker(ticker)
-                    if ticker_check.history(period="1d").empty:
-                        st.error(f"❌ Invalid or delisted ticker: {ticker}")
+                    try:
+                        ticker_check = yf.Ticker(ticker)
+                        if not ticker_check.history(period="1d").empty:
+                            st.success(f"✅ Valid ticker: {ticker}")
+                        else:
+                            st.error(f"❌ Invalid ticker: {ticker}")
+                            return
+                    except Exception as e:
+                        st.error(f"❌ Ticker verification failed: {str(e)}")
                         return
-                
+
                 with st.spinner(f"Fetching {ticker} data..."):
-                    df = yf.download(
-                        ticker, 
-                        start=start_date, 
-                        end=end_date + datetime.timedelta(days=1),
-                        progress=False
-                    )
-                    
-                    if df.empty:
-                        st.error(f"⚠️ No data found for {ticker}!")
-                        return
+                    try:
+                        df = yf.download(
+                            ticker,
+                            start=start_date - datetime.timedelta(days=3),
+                            end=adjusted_end_date + datetime.timedelta(days=3),
+                            progress=False
+                        )
+                        df = df.loc[pd.to_datetime(start_date):pd.to_datetime(adjusted_end_date)]
                         
-                    df = df.reset_index()
-                    st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
-                           caption="Market data loaded!")
+                        if df.empty:
+                            hist = yf.Ticker(ticker).history(period="max")
+                            if not hist.empty:
+                                last_date = hist.index[-1].date()
+                                st.error(f"⚠️ Last available date: {last_date}")
+                            else:
+                                st.error(f"❌ Ticker {ticker} not found!")
+                            return
+                            
+                        df = df.reset_index()
+                        st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
+                               caption="Market data loaded!")
+
+                    except Exception as e:
+                        st.error(f"🚨 Download failed: {str(e)}")
+                        return
 
             else:
                 if uploaded_file:
@@ -130,7 +159,13 @@ def main():
             st.write(f"Date Range: {df['Date'].min().date()} to {df['Date'].max().date()}")
 
         except Exception as e:
-            st.error(f"🚨 Data loading failed: {str(e)}")
+            st.error(f"🚨 Critical error: {str(e)}")
+            st.markdown("""
+            **Troubleshooting Checklist:**
+            1. Verify ticker on [Yahoo Finance](https://finance.yahoo.com)
+            2. Try smaller date range
+            3. Check for exchange suffixes (.TO, .L)
+            4. Avoid recent dates""")
 
     # Step 2: Data Preprocessing
     if st.session_state.steps['loaded']:
@@ -141,15 +176,11 @@ def main():
             if st.button("🧹 Clean Data"):
                 try:
                     if st.session_state.data is None:
-                        st.error("No data loaded! Complete Step 1 first.")
+                        st.error("Complete Step 1 first!")
                         return
                         
                     df = st.session_state.data.copy()
                     
-                    if 'Date' not in df.columns or 'Close' not in df.columns:
-                        st.error("Invalid dataset structure!")
-                        return
-
                     st.write("### Missing Values Analysis:")
                     missing = pd.DataFrame({
                         'Feature': df.columns,
@@ -166,15 +197,15 @@ def main():
                     final_count = len(df)
                     
                     if final_count == 0:
-                        st.error("Data cleaning removed all records!")
+                        st.error("All data removed during cleaning!")
                         return
                     
                     st.session_state.data = df
                     st.session_state.steps['processed'] = True
-                    st.success(f"Cleaned data: {final_count} rows remaining")
+                    st.success(f"Removed {initial_count - final_count} rows. {final_count} remaining.")
 
                 except Exception as e:
-                    st.error(f"Data cleaning failed: {str(e)}")
+                    st.error(f"Cleaning failed: {str(e)}")
 
         with col2:
             if st.session_state.steps['processed']:
@@ -197,7 +228,7 @@ def main():
                 df = st.session_state.data.copy()
                 
                 if len(df) < 50:
-                    st.error("Need at least 50 data points!")
+                    st.error("Minimum 50 data points required!")
                     return
                     
                 with st.spinner("Calculating technical indicators..."):
@@ -216,7 +247,7 @@ def main():
                     st.write("### Feature Correlation Matrix:")
                     corr_matrix = df.corr()
                     fig = px.imshow(corr_matrix, text_auto=".2f", 
-                                    color_continuous_scale='Blues')
+                                  color_continuous_scale='Blues')
                     st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
@@ -232,7 +263,7 @@ def main():
                 required_features = ['SMA_20', 'SMA_50', 'RSI']
                 missing_features = [f for f in required_features if f not in df.columns]
                 if missing_features:
-                    st.error(f"Missing features: {', '.join(missing_features)}")
+                    st.error(f"Missing: {', '.join(missing_features)}")
                     return
                     
                 X = df[required_features]
@@ -254,7 +285,7 @@ def main():
                 })
                 st.session_state.steps['split'] = True
                 
-                st.write("### Dataset Split Visualization:")
+                st.write("### Dataset Split:")
                 split_df = pd.DataFrame({
                     'Set': ['Train', 'Test'],
                     'Count': [len(X_train), len(X_test)]
@@ -264,7 +295,7 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
-                st.error(f"Data splitting failed: {str(e)}")
+                st.error(f"Splitting failed: {str(e)}")
 
     # Step 5: Model Training
     if st.session_state.steps.get('split'):
@@ -273,7 +304,7 @@ def main():
         if st.button("🎯 Train Model"):
             try:
                 if not st.session_state.get('X_train'):
-                    st.error("Training data not found!")
+                    st.error("Complete Step 4 first!")
                     return
                     
                 if model_type == "Linear Regression":
@@ -290,7 +321,7 @@ def main():
                 st.balloons()
 
             except Exception as e:
-                st.error(f"Model training failed: {str(e)}")
+                st.error(f"Training failed: {str(e)}")
 
     # Step 6: Model Evaluation
     if st.session_state.steps.get('trained'):
@@ -303,7 +334,7 @@ def main():
                 y_test = st.session_state.y_test
                 
                 if model is None or X_test is None:
-                    st.error("Missing model or test data!")
+                    st.error("Complete previous steps first!")
                     return
                     
                 y_pred = model.predict(X_test).flatten()
