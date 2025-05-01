@@ -62,7 +62,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL").strip().upper()
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
@@ -78,22 +78,49 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Load Data
+    # Step 1: Load Data (Enhanced Error Handling)
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
             if data_source == "Yahoo Finance":
                 with st.spinner("Fetching market data..."):
-                    df = yf.download(ticker, start=start_date, end=end_date)
-                    if df.empty:
-                        st.error("Invalid ticker or date range!")
+                    # Validate ticker first
+                    ticker_obj = yf.Ticker(ticker)
+                    try:
+                        # Check if ticker is valid
+                        info = ticker_obj.info
+                        if not info.get('regularMarketPrice'):
+                            st.error(f"❌ Invalid ticker symbol: {ticker}")
+                            return
+                    except Exception:
+                        st.error(f"❌ Invalid ticker symbol: {ticker}")
                         return
+
+                    # Validate date range
+                    if start_date > end_date:
+                        st.error("🚨 Invalid date range: Start date must be before end date!")
+                        return
+
+                    # Adjust end date to be inclusive
+                    adjusted_end = end_date + datetime.timedelta(days=1)
+                    
+                    # Download data
+                    df = yf.download(ticker, start=start_date, end=adjusted_end)
+                    
+                    # Handle empty data
+                    if df.empty:
+                        st.warning(f"⚠️ No data found for {ticker} in this date range. Try expanding the date range.")
+                        return
+                    
                     df = df.reset_index()
                     st.image("https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExenpzeTAwcjE1dTM0YXVueGF6azl4NWVwZTZvaWt1cmZpNm1jdGdnMSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LPPMTiRjzhJKXS6okK/giphy.gif", 
-                           caption="Market data loaded!")
+                            caption="Market data loaded!")
             else:
                 if uploaded_file:
                     df = pd.read_csv(uploaded_file).reset_index(drop=True)
+                    if df.empty:
+                        st.error("Uploaded CSV file is empty!")
+                        return
                     st.success("CSV file loaded successfully!")
                 else:
                     st.warning("Please upload a CSV file!")
@@ -107,6 +134,9 @@ def main():
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
 
+    # Rest of the code remains the same as original version...
+    # [Include all other sections from original code here]
+    
     # Step 2: Preprocessing
     if st.session_state.steps['loaded']:
         st.header("2. Data Preprocessing")
