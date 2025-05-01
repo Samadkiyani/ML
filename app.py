@@ -78,38 +78,42 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Load Data (Enhanced Error Handling)
+    # Step 1: Load Data with Enhanced Error Handling
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
             if data_source == "Yahoo Finance":
                 with st.spinner("Fetching market data..."):
-                    # Validate ticker first
-                    ticker_obj = yf.Ticker(ticker)
+                    # Validate ticker with actual data check
                     try:
-                        # Check if ticker is valid
-                        info = ticker_obj.info
-                        if not info.get('regularMarketPrice'):
-                            st.error(f"❌ Invalid ticker symbol: {ticker}")
+                        test_data = yf.download(ticker, period="1d")
+                        if test_data.empty:
+                            st.error(f"❌ Invalid ticker or no market data: {ticker}")
                             return
                     except Exception:
                         st.error(f"❌ Invalid ticker symbol: {ticker}")
                         return
 
-                    # Validate date range
+                    # Auto-adjust future dates
+                    today = datetime.date.today()
+                    if end_date > today:
+                        st.warning(f"⚠️ Adjusted end date to today ({today})")
+                        end_date = today
+
+                    # Validate date range after adjustment
                     if start_date > end_date:
-                        st.error("🚨 Invalid date range: Start date must be before end date!")
+                        st.error("🚨 Invalid date range after adjustment!")
                         return
 
-                    # Adjust end date to be inclusive
+                    # Add buffer for inclusive date range
                     adjusted_end = end_date + datetime.timedelta(days=1)
                     
                     # Download data
                     df = yf.download(ticker, start=start_date, end=adjusted_end)
                     
-                    # Handle empty data
+                    # Final data validation
                     if df.empty:
-                        st.warning(f"⚠️ No data found for {ticker} in this date range. Try expanding the date range.")
+                        st.error("🚨 No data available after date adjustments!")
                         return
                     
                     df = df.reset_index()
@@ -134,9 +138,9 @@ def main():
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
 
-    # Rest of the code remains the same as original version...
-    # [Include all other sections from original code here]
-    
+    # Rest of the application code remains unchanged
+    # [Previous code for steps 2-6 here...]
+
     # Step 2: Preprocessing
     if st.session_state.steps['loaded']:
         st.header("2. Data Preprocessing")
