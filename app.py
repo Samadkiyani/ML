@@ -307,7 +307,7 @@ def main():
                 st.error(f"Evaluation failed: {str(e)}")
 
     st.markdown("---")
-    st.markdown("Built with ❤️ using Streamlit | [GitHub Repo](#)")
+    st.markdown("Built by samad Kiani ❤️ using Streamlit")
 
 def compute_rsi(prices, window=14):
     delta = prices.diff()
