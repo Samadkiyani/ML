@@ -62,7 +62,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "AAPL")
+            ticker = st.text_input("Stock Ticker (e.g., AAPL):", "TSLA")
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
