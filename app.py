@@ -1,4 +1,4 @@
-# app.py - Complete Financial ML Platform with Rate Limiting
+# app.py - Complete Financial ML Platform with Comprehensive Error Handling
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -34,20 +34,22 @@ st.markdown("""
     .stAlert {border-radius: 5px;}
     .sidebar .sidebar-content {background-color: #e8f4f8;}
     .weekend-adjust {color: #d35400; font-weight: bold;}
+    .error-list {padding-left: 20px; margin-top: 10px;}
+    .data-preview {max-height: 300px; overflow-y: auto;}
 </style>
 """, unsafe_allow_html=True)
 
-# Rate limiting parameters
+# Configuration
 MAX_RETRIES = 3
-BASE_DELAY = 2.5  # Base delay in seconds
-JITTER = 1.0       # Random delay variation
-BACKUP_TICKERS = ['AAPL', 'MSFT', 'GOOGL']  # Reduced list for fewer requests
+BASE_DELAY = 2.5
+JITTER = 1.0
+BACKUP_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+MIN_DATA_POINTS = 10
 
 def safe_download(ticker, start_date, end_date):
     """Enhanced download function with rate limit handling"""
     for attempt in range(MAX_RETRIES):
         try:
-            # Randomized delay with jitter
             delay = BASE_DELAY + random.uniform(0, JITTER)
             time.sleep(delay)
             
@@ -64,7 +66,7 @@ def safe_download(ticker, start_date, end_date):
             return df.reset_index()
         except Exception as e:
             if "YFRateLimitError" in str(e) and attempt < MAX_RETRIES - 1:
-                retry_delay = (BASE_DELAY * 2) ** attempt  # Exponential backoff
+                retry_delay = (BASE_DELAY * 2) ** attempt
                 st.warning(f"⚠️ Rate limited. Retrying in {retry_delay:.1f}s...")
                 time.sleep(retry_delay)
                 continue
@@ -128,7 +130,7 @@ def main():
         st.header("🔗 Navigation")
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Data Acquisition with Rate Limiting
+    # Step 1: Data Acquisition with Comprehensive Error Handling
     st.header("1. Data Acquisition")
     if st.button("🚀 Load Data"):
         try:
@@ -150,21 +152,50 @@ def main():
                 current_ticker = ticker
                 all_tickers = [current_ticker] + [t for t in BACKUP_TICKERS if t != current_ticker]
                 df = pd.DataFrame()
-                
+                failure_reasons = []
+
                 for t in all_tickers:
                     try:
                         with st.spinner(f"Fetching {t}..."):
+                            ticker_info = yf.Ticker(t).info
+                            listing_date = pd.to_datetime(ticker_info.get('firstTradeDateEpochUtc', pd.NaT), unit='s')
+                            
+                            if pd.notna(listing_date):
+                                if start_date < listing_date.date():
+                                    failure_reasons.append(f"{t}: Start date precedes listing date ({listing_date.date()})")
+                                    continue
+                            
                             df = safe_download(t, start_date, adjusted_end_date)
+                            
+                            if len(df) < MIN_DATA_POINTS:
+                                failure_reasons.append(f"{t}: Insufficient data points ({len(df)})")
+                                continue
+                                
                             current_ticker = t
                             break
+                            
                     except Exception as e:
+                        failure_reason = f"{t}: {str(e)}"
                         if "YFRateLimitError" in str(e):
-                            st.error("❌ Yahoo Finance rate limit reached. Please try again later.")
-                            return
+                            failure_reason += " (Rate Limited)"
+                        failure_reasons.append(failure_reason)
                         continue
 
                 if df.empty:
-                    st.error("❌ All tickers failed! Try smaller date range or CSV upload")
+                    st.error("❌ All tickers failed! Possible reasons:")
+                    st.markdown(f"""
+                    **Detailed failures:**
+                    <div class="error-list">
+                    {''.join([f'• {reason}<br>' for reason in failure_reasons])}
+                    </div>
+
+                    **Troubleshooting steps:**
+                    1. Try reducing date range (1-6 months)
+                    2. Verify dates don't predate company listing
+                    3. Check network connection
+                    4. Use CSV upload option below
+                    5. Wait 5 minutes and try again
+                    """, unsafe_allow_html=True)
                     return
 
                 if current_ticker != ticker:
@@ -175,6 +206,13 @@ def main():
                        caption="Market data loaded!")
 
             else:
+                st.markdown("""
+                **CSV Format Requirements:**
+                - Must contain 'Date' and 'Close' columns
+                - Date format: YYYY-MM-DD
+                - Sample CSV: [Download Example](https://example.com/sample.csv)
+                """)
+                
                 if uploaded_file:
                     try:
                         df = pd.read_csv(uploaded_file)
@@ -207,7 +245,6 @@ def main():
             3. Check for exchange suffixes (.TO, .L)
             4. Avoid recent dates""")
 
-    # Steps 2-6 (Same as previous implementation)
     # Step 2: Data Preprocessing
     if st.session_state.steps['loaded']:
         st.header("2. Data Preprocessing")
