@@ -7,3 +7,4 @@ plotly
 yfinance>=0.2.40
 python-dateutil
 pytz
+seaborn
