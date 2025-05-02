@@ -1,4 +1,4 @@
-# app.py - Financial ML Platform with IEX Cloud Integration
+# app.py - Financial ML Platform with Twelve Data Integration
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,6 +19,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Constants
+TWELVE_DATA_URL = "https://api.twelvedata.com/time_series"
+HISTORICAL_YEARS = 5
+MAX_REQUESTS_PER_DAY = 800
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -29,13 +34,9 @@ st.markdown("""
     .stDownloadButton>button {background-color: #4CAF50; color: white;}
     .stAlert {border-radius: 5px;}
     .sidebar .sidebar-content {background-color: #e8f4f8;}
-    .rate-limit {color: #e67e22; font-weight: bold;}
+    .rate-counter {color: #d35400; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
-
-IEX_BASE_URL = "https://cloud.iexapis.com/stable"
-MAX_RETRIES = 3
-RATE_LIMIT_WAIT = 60  # seconds
 
 def compute_rsi(prices, window=14):
     delta = prices.diff()
@@ -48,62 +49,56 @@ def compute_rsi(prices, window=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def fetch_iex_data(symbol, token, years=5):
-    endpoint = f"{IEX_BASE_URL}/stock/{symbol}/chart/5y"
+def fetch_twelve_data(symbol, api_key):
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=HISTORICAL_YEARS*365)
+    
     params = {
-        "token": token,
-        "chartCloseOnly": False,
-        "includeToday": True
+        "symbol": symbol,
+        "interval": "1day",
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "apikey": api_key,
+        "outputsize": 5000
     }
     
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = requests.get(endpoint, params=params)
-            response.raise_for_status()
-            
-            if 'X-RateLimit-Remaining' in response.headers:
-                remaining = int(response.headers['X-RateLimit-Remaining'])
-                st.sidebar.markdown(f"<div class='rate-limit'>API Calls Remaining: {remaining}</div>", 
-                                  unsafe_allow_html=True)
-            
-            data = response.json()
-            df = pd.DataFrame(data)
-            
-            # Convert IEX format to standard OHLCV
-            df = df.rename(columns={
-                'date': 'Date',
-                'open': 'Open',
-                'high': 'High',
-                'low': 'Low',
-                'close': 'Close',
-                'volume': 'Volume'
-            })
-            
-            df['Date'] = pd.to_datetime(df['Date'])
-            df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
-            df = df.dropna()
-            
-            return df.sort_values('Date').reset_index(drop=True)
-            
-        except requests.exceptions.HTTPError as e:
-            if response.status_code == 429:
-                st.error(f"Rate limit exceeded. Waiting {RATE_LIMIT_WAIT} seconds...")
-                time.sleep(RATE_LIMIT_WAIT)
-                continue
-            raise
-        except Exception as e:
-            st.error(f"API Error: {str(e)}")
+    try:
+        response = requests.get(TWELVE_DATA_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'values' not in data:
+            st.error(f"API Error: {data.get('message', 'Unknown error')}")
             return pd.DataFrame()
             
-    return pd.DataFrame()
+        df = pd.DataFrame(data['values'])
+        df = df.rename(columns={
+            'datetime': 'Date',
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'volume': 'Volume'
+        })[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+        
+        # Convert numeric types
+        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+        df['Date'] = pd.to_datetime(df['Date'])
+        
+        return df.sort_values('Date').dropna().reset_index(drop=True)
+        
+    except Exception as e:
+        st.error(f"API Request Failed: {str(e)}")
+        return pd.DataFrame()
 
 def main():
-    st.title("📈 FinML Pro - IEX Cloud Integration")
+    st.title("📈 FinML Pro - Twelve Data Integration")
     st.markdown("---")
     
-    # Session state
+    # Session state management
     session_defaults = {
-        'data': None, 'model': None, 'api_remaining': 'N/A',
+        'data': None, 'model': None, 'request_count': 0,
         'steps': {'loaded': False, 'processed': False, 
                  'features_created': False, 'split': False, 'trained': False},
         'predictions': None
@@ -113,72 +108,82 @@ def main():
 
     # Sidebar Configuration
     with st.sidebar:
-        st.header("⚙️ IEX Cloud Configuration")
-        iex_token = st.text_input("IEX API Token:", type="password")
+        st.header("⚙️ Twelve Data Config")
+        twelve_api_key = st.text_input("API Key:", type="password")
         symbol = st.text_input("Stock Symbol:", "AAPL").upper()
         
-        st.markdown("""
+        st.markdown(f"""
         ---
-        **Free Tier Limits:**
-        - 500,000 messages/month
-        - 50 messages/second
-        [Get API Key](https://iexcloud.io/cloud-login#/register/)
+        **API Limits:**
+        - {MAX_REQUESTS_PER_DAY} requests/day
+        - 8 requests/minute
+        [Get API Key](https://twelvedata.com/pricing)
         """)
         
+        st.markdown(f"<div class='rate-counter'>Requests Used Today: {st.session_state.request_count}/{MAX_REQUESTS_PER_DAY}</div>", 
+                   unsafe_allow_html=True)
+        
         st.header("🧠 Model Settings")
-        model_type = st.selectbox("Select Model:", ["Linear Regression", "Random Forest"])
-        test_size = st.slider("Test Size Ratio:", 0.1, 0.5, 0.2)
-        st.button("Reload App", on_click=lambda: st.session_state.clear())
+        model_type = st.selectbox("Algorithm:", ["Linear Regression", "Random Forest"])
+        test_size = st.slider("Test Size:", 0.1, 0.5, 0.2)
+        st.button("Reset Session", on_click=lambda: st.session_state.clear())
 
     # Step 1: Data Acquisition
     st.header("1. Data Acquisition")
-    if st.button("📡 Fetch IEX Data"):
-        if not iex_token:
-            st.error("IEX API Token required!")
+    if st.button("🌐 Fetch Market Data"):
+        if not twelve_api_key:
+            st.error("API Key Required!")
             return
             
-        if not symbol.isalpha():
-            st.error("Invalid stock symbol!")
+        if st.session_state.request_count >= MAX_REQUESTS_PER_DAY:
+            st.error("Daily API limit reached!")
             return
             
-        with st.spinner(f"Fetching 5-year historical data for {symbol}..."):
-            df = fetch_iex_data(symbol, iex_token)
+        with st.spinner(f"Fetching {HISTORICAL_YEARS} years of data for {symbol}..."):
+            df = fetch_twelve_data(symbol, twelve_api_key)
             
             if df.empty:
-                st.error("Failed to fetch data. Check symbol and API token.")
                 return
                 
             st.session_state.data = df
+            st.session_state.request_count += 1
             st.session_state.steps['loaded'] = True
-            st.success(f"✅ Fetched {len(df)} trading days")
-            st.dataframe(df.tail(10).style.format("{:.2f}"), height=350)
+            
+            st.success(f"Retrieved {len(df)} trading days")
+            st.dataframe(df.tail(10).style.format("{:.2f}", subset=['Open', 'High', 'Low', 'Close']))
 
-    # Step 2: Data Preprocessing
+    # Step 2: Data Preparation
     if st.session_state.steps['loaded']:
-        st.header("2. Data Preprocessing")
+        st.header("2. Data Preparation")
         
-        if st.button("🧼 Clean & Validate"):
+        if st.button("🧹 Clean Data"):
             df = st.session_state.data.copy()
             
-            # Convert numeric types
-            numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
-            df = df.dropna()
+            st.write("### Data Quality Report")
+            quality_report = pd.DataFrame({
+                'Missing Values': df.isnull().sum(),
+                'Zero Values': (df == 0).sum(),
+                'Data Type': df.dtypes
+            })
             
+            fig = px.bar(quality_report, 
+                        x=['Missing Values', 'Zero Values'], 
+                        y=quality_report.index,
+                        barmode='group',
+                        labels={'value': 'Count', 'variable': 'Metric'},
+                        color_discrete_sequence=['#2a4a7c', '#3b6ea5'])
+            st.plotly_chart(fig, use_container_width=True)
+            
+            df = df.dropna()
             st.session_state.data = df
             st.session_state.steps['processed'] = True
-            
-            st.write("### Data Summary")
-            st.dataframe(df.describe().style.format("{:.2f}"), height=250)
-            
-            fig = px.line(df, x='Date', y='Close', title="Historical Closing Prices")
-            st.plotly_chart(fig, use_container_width=True)
+            st.success(f"Clean dataset: {len(df)} records")
 
     # Step 3: Feature Engineering
     if st.session_state.steps['processed']:
         st.header("3. Feature Engineering")
         
-        if st.button("⚙ Generate Features"):
+        if st.button("⚡ Generate Features"):
             df = st.session_state.data.copy()
             
             with st.spinner("Creating technical indicators..."):
@@ -190,15 +195,16 @@ def main():
                 st.session_state.data = df
                 st.session_state.steps['features_created'] = True
                 
-                st.write("### Feature Correlation")
-                fig = px.imshow(df.corr(), color_continuous_scale='Blues')
+                st.write("### Feature Relationships")
+                fig = px.scatter_matrix(df[['Close', 'SMA_20', 'SMA_50', 'RSI']],
+                                       color='Close', height=800)
                 st.plotly_chart(fig, use_container_width=True)
 
     # Step 4: Data Split
     if st.session_state.steps['features_created']:
         st.header("4. Data Split")
         
-        if st.button("✂ Split Dataset"):
+        if st.button("⏰ Time-based Split"):
             df = st.session_state.data.copy()
             features = ['SMA_20', 'SMA_50', 'RSI']
             
@@ -221,8 +227,20 @@ def main():
             })
             st.session_state.steps['split'] = True
             
-            st.write(f"Training Period: {df['Date'].iloc[0].date()} - {df['Date'].iloc[split_idx-1].date()}")
-            st.write(f"Testing Period: {df['Date'].iloc[split_idx].date()} - {df['Date'].iloc[-1].date()}")
+            st.write("### Split Visualization")
+            split_df = pd.DataFrame({
+                'Dataset': ['Train', 'Test'],
+                'Samples': [len(X_train), len(X_test)],
+                'Start Date': [df['Date'].min().strftime("%Y-%m-%d"), 
+                             df.iloc[split_idx]['Date'].strftime("%Y-%m-%d")],
+                'End Date': [df.iloc[split_idx-1]['Date'].strftime("%Y-%m-%d"), 
+                           df['Date'].max().strftime("%Y-%m-%d")]
+            })
+            
+            fig = px.bar(split_df, x='Dataset', y='Samples', 
+                        text='Samples', color='Dataset',
+                        hover_data=['Start Date', 'End Date'])
+            st.plotly_chart(fig, use_container_width=True)
 
     # Step 5: Model Training
     if st.session_state.steps['split']:
@@ -243,31 +261,45 @@ def main():
     if st.session_state.steps['trained']:
         st.header("6. Model Evaluation")
         
-        if st.button("📊 Evaluate"):
+        if st.button("📈 Evaluate Performance"):
             model = st.session_state.model
             X_test = st.session_state.X_test
             y_test = st.session_state.y_test
             y_pred = model.predict(X_test)
             
-            col1, col2 = st.columns(2)
+            # Metrics
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
             with col2:
                 st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
+            with col3:
+                error = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+                st.metric("MAPE", f"{error:.2f}%")
             
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=y_test, y=y_pred, mode='markers', name='Predictions'))
-            fig.add_trace(go.Scatter(x=[min(y_test), max(y_test)], y=[min(y_test), max(y_test)], 
-                                   mode='lines', name='Perfect Fit'))
+            # Prediction Visualization
+            results = pd.DataFrame({
+                'Actual': y_test,
+                'Predicted': y_pred,
+                'Date': st.session_state.data['Date'].iloc[-len(y_test):]
+            })
+            
+            fig = px.line(results, x='Date', y=['Actual', 'Predicted'],
+                          labels={'value': 'Price', 'variable': 'Type'},
+                          color_discrete_sequence=['#2a4a7c', '#4CAF50'])
             st.plotly_chart(fig, use_container_width=True)
             
+            # Feature Importance
             if model_type == "Random Forest":
-                st.write("Feature Importance:")
+                st.write("### Feature Importance")
                 importance = pd.DataFrame({
                     'Feature': ['SMA_20', 'SMA_50', 'RSI'],
                     'Importance': model.feature_importances_
-                })
-                fig = px.bar(importance, x='Importance', y='Feature', orientation='h')
+                }).sort_values('Importance', ascending=False)
+                
+                fig = px.bar(importance, x='Importance', y='Feature',
+                            orientation='h', color='Importance',
+                            color_continuous_scale='Blues')
                 st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
