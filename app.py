@@ -31,7 +31,7 @@ if not API_KEY:
     🔐 Missing API Key Configuration!
     Configure either:
     1. Add to .streamlit/secrets.toml (for deployment):
-       ALPHA_VANTAGE_KEY = "your-api-key-here"
+       ALPHA_VANTAGE_KEY = "BN2FYPLW1G4W7Y2G"
     2. Set environment variable (for local development):
        export ALPHA_VANTAGE_KEY='your-api-key-here'
     """)
