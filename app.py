@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     body, .stApp {
-        background-image: url('https://images.unsplash.com/photo-1612831818614-925e00b9281f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1950&q=80');
+        background-image: url('https://media.istockphoto.com/id/1322288393/photo/businessman-using-tablet-analyzing-sales-data-and-economic-growth-graph-chart-business.jpg?b=1&s=170667a&w=0&k=20&c=UWG3eGk9MJVOacQNZVygd82eN4bRzcvLHeVx99b6BW8=');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
