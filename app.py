@@ -1,4 +1,4 @@
-# app.py - Financial ML Platform with Rate Limit Protection
+# app.py - Financial ML Platform (Closing Price Only)
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -28,27 +28,19 @@ st.markdown("""
 <style>
     .main {background-color: #f9f9f9;}
     h1 {color: #2a4a7c; border-bottom: 2px solid #2a4a7c;}
-    .stTextInput>div>div>input {background-color: #f0f2f6;}
-    .stButton>button {background-color: #2a4a7c; color: white; border-radius: 5px;}
-    .stAlert {border-left: 3px solid #2a4a7c;}
-    .ticker-error {color: #dc3545; font-weight: bold;}
-    .date-warning {color: #ffc107; background-color: #fff3cd; padding: 10px; border-radius: 5px;}
-    .countdown {color: #e67e22; font-weight: bold; padding: 10px; border: 2px solid #e67e22; border-radius: 5px;}
+    .stButton>button {background-color: #2a4a7c; color: white;}
+    .error-box {padding: 15px; background-color: #ffe6e6; border: 1px solid #ffcccc;}
 </style>
 """, unsafe_allow_html=True)
 
 # Configuration
 MAX_RETRIES = 3
-BASE_DELAY = 8.0
-JITTER = 4.0
+BASE_DELAY = 10.0
+JITTER = 5.0
 MIN_DATA_POINTS = 30
-COOLDOWN_PERIOD = 1800  # 30 minutes in seconds
 USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X...)',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0)...',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X)...',
-    'Mozilla/5.0 (Linux; Android 13; SM-S901B)...'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
 ]
 
 def validate_ticker(ticker):
@@ -60,166 +52,166 @@ def compute_rsi(prices, window=14):
     loss = (-delta.where(delta < 0, 0)).fillna(0)
     avg_gain = gain.rolling(window).mean()
     avg_loss = loss.rolling(window).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    return 100 - (100 / (1 + (avg_gain / avg_loss)))
 
-def safe_download(ticker, start_date, end_date):
+def safe_fetch_close(ticker, start_date, end_date):
+    """Fetch only closing prices with robust error handling"""
     for attempt in range(MAX_RETRIES):
         try:
-            delay = (BASE_DELAY * (2 ** attempt)) + random.uniform(0, JITTER)
-            with st.spinner(f"⏳ Strategic delay {delay:.1f}s..."):
-                time.sleep(delay)
-
-            df = yf.download(
-                ticker,
+            delay = BASE_DELAY + random.uniform(0, JITTER)
+            time.sleep(delay)
+            
+            stock = yf.Ticker(ticker)
+            hist = stock.history(
                 start=start_date - datetime.timedelta(days=3),
                 end=end_date + datetime.timedelta(days=3),
-                progress=False
+                interval='1d',
+                actions=False
             )
-
-            if df.empty:
-                raise ValueError("Empty response from server")
-
-            return df.loc[start_date:end_date].reset_index()
+            
+            if hist.empty:
+                raise ValueError("No data returned")
+                
+            close_prices = hist[['Close']].reset_index()
+            close_prices = close_prices.loc[start_date:end_date]
+            
+            if len(close_prices) < MIN_DATA_POINTS:
+                raise ValueError(f"Only {len(close_prices)} data points")
+                
+            return close_prices
 
         except Exception as e:
-            if "YFRateLimitError" in str(e) or "429" in str(e):
-                remaining_time = COOLDOWN_PERIOD - (attempt * 600)
-                st.error(f"""
-                🔥 Critical Rate Limit Hit!
-                ⏲️ Recommended cooldown: {remaining_time//60} minutes
-                🛠️ Try VPN / use CSV
-                """)
-                with st.empty():
-                    for i in range(remaining_time, 0, -1):
-                        st.markdown(f"<div class='countdown'>⏳ Retry in: {i//60:02d}:{i%60:02d}</div>", unsafe_allow_html=True)
-                        time.sleep(1)
-                    st.markdown("🟢 Ready to try again!")
-                continue
-            raise
-    raise ValueError(f"Failed after {MAX_RETRIES} attempts")
+            if attempt == MAX_RETRIES-1:
+                st.markdown(f"""
+                <div class='error-box'>
+                <h4>🚨 Failed to fetch {ticker}</h4>
+                <p><strong>Reason:</strong> {str(e)}</p>
+                <p><strong>Solutions:</strong></p>
+                <ol>
+                    <li>Verify ticker on Yahoo Finance</li>
+                    <li>Try smaller date range (1-3 months)</li>
+                    <li>Wait 5 minutes and try again</li>
+                </ol>
+                </div>
+                """, unsafe_allow_html=True)
+            time.sleep(2 ** attempt)
+    return None
 
 def main():
-    st.title("📈 Robust Stock Analysis Platform")
+    st.title("📈 Stock Closing Price Analyzer")
     st.markdown("---")
-    st.markdown("""
-    💡 **Rate Limit Tips**:
-    - Use date ranges < 6 months
-    - Avoid rapid reloads
-    - Use CSV for heavy data
-    """)
-
+    
+    # Session state
     if 'data' not in st.session_state:
         st.session_state.data = None
     if 'model' not in st.session_state:
         st.session_state.model = None
 
+    # Sidebar
     with st.sidebar:
-        st.header("⚙️ Configuration")
-        data_source = st.radio("Data Source:", ["Yahoo Finance", "CSV Upload"])
+        st.header("⚙️ Settings")
+        data_source = st.radio("Data Source", ["Yahoo Finance", "CSV Upload"])
+        
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Enter Stock Ticker:", "").strip().upper()
-            start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
-            end_date = st.date_input("End Date:", datetime.date.today())
+            ticker = st.text_input("Stock Ticker", "AAPL").strip().upper()
+            start_date = st.date_input("Start Date", datetime.date(2020, 1, 1))
+            end_date = st.date_input("End Date", datetime.date.today())
         else:
-            uploaded_file = st.file_uploader("Upload CSV:", type=["csv"])
+            uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+        
         st.markdown("---")
-        st.header("Model Settings")
-        model_type = st.selectbox("Algorithm:", ["Linear Regression", "Random Forest"])
-        test_size = st.slider("Test Size:", 0.1, 0.5, 0.2)
-        st.button("Reset Session", on_click=lambda: st.session_state.clear())
+        model_type = st.selectbox("Model Type", ["Linear Regression", "Random Forest"])
+        test_size = st.slider("Test Size", 0.1, 0.5, 0.2)
 
-    st.header("1. Data Acquisition")
-    if st.button("📥 Load Market Data"):
+    # Data loading
+    st.header("1. Data Loading")
+    if st.button("Load Closing Prices"):
         if data_source == "Yahoo Finance":
-            if not ticker or not validate_ticker(ticker):
-                st.error("🛑 Invalid or empty ticker")
+            if not validate_ticker(ticker):
+                st.error("Invalid ticker format")
                 return
+                
             if start_date >= end_date:
-                st.error("📅 Start date must be before end date")
+                st.error("Invalid date range")
                 return
-            try:
-                with st.spinner("🔍 Validating ticker..."):
-                    info = yf.Ticker(ticker).info
-                    if not info.get('regularMarketPrice'):
-                        raise ValueError("Invalid or delisted ticker")
-                df = safe_download(ticker, start_date, end_date)
-                if len(df) < MIN_DATA_POINTS:
-                    raise ValueError("Insufficient data points")
-                st.session_state.data = df
-                st.success("✅ Data loaded successfully")
-                st.dataframe(df.head())
-            except Exception as e:
-                st.error(f"❗ Error: {str(e)}")
+
+            with st.spinner(f"Fetching {ticker} closing prices..."):
+                df = safe_fetch_close(ticker, start_date, end_date)
+                if df is not None:
+                    st.session_state.data = df.rename(columns={'Close': 'Price'})
+                    st.success(f"Loaded {len(df)} days of closing prices")
+                    st.line_chart(df.set_index('Date')['Close'])
+
         else:
             if uploaded_file:
                 try:
                     df = pd.read_csv(uploaded_file)
-                    if not {'Date', 'Close'}.issubset(df.columns):
-                        raise ValueError("CSV must include 'Date' and 'Close'")
+                    if 'Close' not in df.columns:
+                        raise ValueError("Missing 'Close' column")
                     df['Date'] = pd.to_datetime(df['Date'])
-                    st.session_state.data = df.sort_values('Date')
-                    st.success("✅ CSV loaded successfully")
+                    st.session_state.data = df[['Date', 'Close']].rename(columns={'Close': 'Price'})
+                    st.success("CSV loaded successfully")
                 except Exception as e:
                     st.error(f"CSV Error: {str(e)}")
-            else:
-                st.warning("⚠️ Upload a valid CSV")
 
+    # Data processing
     if st.session_state.data is not None:
-        st.header("2. Data Preparation")
+        st.header("2. Data Processing")
         df = st.session_state.data
-        if st.button("🧼 Clean Data"):
+        
+        if st.button("Clean & Transform"):
             with st.spinner("Processing..."):
-                original = len(df)
+                # Handle missing values
                 df_clean = df.dropna()
+                df_clean = df_clean[df_clean['Price'] > 0]
+                
+                # Feature engineering
+                df_clean['SMA_20'] = df_clean['Price'].rolling(20).mean()
+                df_clean['SMA_50'] = df_clean['Price'].rolling(50).mean()
+                df_clean['RSI'] = compute_rsi(df_clean['Price'])
+                df_clean = df_clean.dropna()
+                
                 st.session_state.data = df_clean
-                st.success(f"Cleaned {original - len(df_clean)} rows")
-        st.subheader("Data Statistics")
-        st.dataframe(df.describe())
+                st.success(f"Processed {len(df_clean)} data points")
+                st.write(df_clean.tail())
 
-    if st.session_state.data is not None and len(st.session_state.data) > 50:
-        st.header("3. Feature Engineering")
-        df = st.session_state.data
-        if st.button("⚙️ Generate Features"):
-            with st.spinner("Generating..."):
-                df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                df['SMA_50'] = df['Close'].rolling(window=50).mean()
-                df['RSI'] = compute_rsi(df['Close'])
-                df.dropna(inplace=True)
-                st.session_state.data = df
-                st.success("✅ Features added")
+        st.header("3. Model Training")
+        if st.button("Train Prediction Model"):
+            if 'SMA_20' not in df.columns:
+                st.error("Run data processing first")
+                return
+                
+            X = df[['SMA_20', 'SMA_50', 'RSI']]
+            y = df['Price']
+            
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_scaled, y, test_size=test_size, shuffle=False
+            )
+            
+            if model_type == "Linear Regression":
+                model = LinearRegression()
+            else:
+                model = RandomForestRegressor(n_estimators=100)
+            
+            model.fit(X_train, y_train)
+            st.session_state.model = model
+            st.success("Model trained successfully")
 
-        st.header("4. Model Training")
-        if st.button("🚀 Train Model"):
-            with st.spinner("Training..."):
-                df = st.session_state.data
-                features = df[['SMA_20', 'SMA_50', 'RSI']]
-                target = df['Close']
-                scaler = StandardScaler()
-                X_scaled = scaler.fit_transform(features)
-                X_train, X_test, y_train, y_test = train_test_split(X_scaled, target, test_size=test_size)
-
-                if model_type == "Linear Regression":
-                    model = LinearRegression()
-                else:
-                    model = RandomForestRegressor(n_estimators=100)
-                model.fit(X_train, y_train)
-                y_pred = model.predict(X_test)
-                mse = mean_squared_error(y_test, y_pred)
-                r2 = r2_score(y_test, y_pred)
-                st.session_state.model = model
-                st.success(f"🎯 Model trained | MSE: {mse:.2f}, R²: {r2:.2f}")
-
-        st.header("5. Forecast Visualization")
+        st.header("4. Predictions")
         if st.session_state.model:
-            df = st.session_state.data
-            features = df[['SMA_20', 'SMA_50', 'RSI']]
-            X_scaled = StandardScaler().fit_transform(features)
-            df['Predicted'] = st.session_state.model.predict(X_scaled)
+            predictions = st.session_state.model.predict(X_scaled)
+            df['Prediction'] = predictions
+            
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='Actual'))
-            fig.add_trace(go.Scatter(x=df['Date'], y=df['Predicted'], name='Predicted'))
-            st.plotly_chart(fig, use_container_width=True)
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Price'], name='Actual'))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Prediction'], name='Predicted'))
+            st.plotly_chart(fig)
+            
+            st.metric("RMSE", np.sqrt(mean_squared_error(y, predictions)))
+            st.metric("R² Score", r2_score(y, predictions))
 
 if __name__ == "__main__":
     main()
