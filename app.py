@@ -33,7 +33,7 @@ if not API_KEY:
     1. Add to .streamlit/secrets.toml (for deployment):
        ALPHA_VANTAGE_KEY = "BN2FYPLW1G4W7Y2G"
     2. Set environment variable (for local development):
-       export ALPHA_VANTAGE_KEY='your-api-key-here'
+       export ALPHA_VANTAGE_KEY='BN2FYPLW1G4W7Y2G'
     """)
     st.stop()
 
