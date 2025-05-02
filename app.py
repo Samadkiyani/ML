@@ -44,85 +44,58 @@ JITTER = 4.0
 MIN_DATA_POINTS = 30
 COOLDOWN_PERIOD = 1800  # 30 minutes in seconds
 USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X...)',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0)...',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X)...',
+    'Mozilla/5.0 (Linux; Android 13; SM-S901B)...'
 ]
-PROXY_SERVERS = {  # Example proxies (replace with actual if available)
-    'http': 'http://user:pass@proxy1:port',
-    'https': 'http://user:pass@proxy1:port'
-}
 
 def validate_ticker(ticker):
-    """Validate stock ticker format"""
-    pattern = r'^[A-Za-z.-]{1,10}$'
-    return re.match(pattern, ticker) is not None
+    return re.match(r'^[A-Za-z.-]{1,10}$', ticker) is not None
 
 def compute_rsi(prices, window=14):
-    """Calculate Relative Strength Index (RSI)"""
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).fillna(0)
     loss = (-delta.where(delta < 0, 0)).fillna(0)
-    
     avg_gain = gain.rolling(window).mean()
     avg_loss = loss.rolling(window).mean()
-    
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
 def safe_download(ticker, start_date, end_date):
-    """Enhanced download function with rate limit protection"""
     for attempt in range(MAX_RETRIES):
         try:
-            # Exponential backoff with jitter
             delay = (BASE_DELAY * (2 ** attempt)) + random.uniform(0, JITTER)
             with st.spinner(f"⏳ Strategic delay {delay:.1f}s..."):
                 time.sleep(delay)
-            
-            # Rotate headers and proxies
             headers = {
                 'User-Agent': random.choice(USER_AGENTS),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Referer': 'https://finance.yahoo.com/'
             }
-            
             df = yf.download(
                 ticker,
                 start=start_date - datetime.timedelta(days=3),
                 end=end_date + datetime.timedelta(days=3),
                 progress=False,
-                headers=headers,
-                # proxies=random.choice(PROXY_SERVERS) if PROXY_SERVERS else None
+                headers=headers
             )
-            
             if df.empty:
                 raise ValueError("Empty response from server")
-                
             return df.loc[start_date:end_date].reset_index()
-            
         except Exception as e:
             if "YFRateLimitError" in str(e) or "429" in str(e):
                 remaining_time = COOLDOWN_PERIOD - (attempt * 600)
                 st.error(f"""
                 🔥 Critical Rate Limit Hit!
                 ⏲️ Recommended cooldown: {remaining_time//60} minutes
-                🛠️ Immediate Solutions:
-                1. Use VPN
-                2. Switch to CSV upload
-                3. Try later
+                🛠️ Try VPN / use CSV
                 """)
-                
-                # Interactive cooldown timer
                 with st.empty():
                     for i in range(remaining_time, 0, -1):
-                        st.markdown(f"""
-                        <div class='countdown'>
-                        ⏳ Retry available in: {i//60:02d}:{i%60:02d}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"<div class='countdown'>⏳ Retry in: {i//60:02d}:{i%60:02d}</div>", unsafe_allow_html=True)
                         time.sleep(1)
                     st.markdown("🟢 Ready to try again!")
                 continue
@@ -132,192 +105,123 @@ def safe_download(ticker, start_date, end_date):
 def main():
     st.title("📈 Robust Stock Analysis Platform")
     st.markdown("---")
-    
-    # Rate limit prevention tips
     st.markdown("""
-    💡 **Rate Limit Prevention:**
-    - Use smaller date ranges (<6 months)
-    - Avoid frequent reloads
-    - Try during non-peak hours (9PM-5AM EST)
-    - Use CSV upload for intensive analysis
+    💡 **Rate Limit Tips**:
+    - Use date ranges < 6 months
+    - Avoid rapid reloads
+    - Use CSV for heavy data
     """)
     
-    # Session state management
     if 'data' not in st.session_state:
         st.session_state.data = None
     if 'model' not in st.session_state:
         st.session_state.model = None
 
-    # Sidebar controls
     with st.sidebar:
         st.header("⚙️ Configuration")
         data_source = st.radio("Data Source:", ["Yahoo Finance", "CSV Upload"])
-        
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Enter Stock Ticker:", "", 
-                                 help="Example: TSLA, GOOGL, BRK.B").strip().upper()
+            ticker = st.text_input("Enter Stock Ticker:", "").strip().upper()
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
             uploaded_file = st.file_uploader("Upload CSV:", type=["csv"])
-        
         st.markdown("---")
         st.header("Model Settings")
         model_type = st.selectbox("Algorithm:", ["Linear Regression", "Random Forest"])
         test_size = st.slider("Test Size:", 0.1, 0.5, 0.2)
         st.button("Reset Session", on_click=lambda: st.session_state.clear())
 
-    # Data loading section
     st.header("1. Data Acquisition")
     if st.button("📥 Load Market Data"):
         if data_source == "Yahoo Finance":
-            if not ticker:
-                st.error("🛑 Please enter a stock ticker!")
+            if not ticker or not validate_ticker(ticker):
+                st.error("🛑 Invalid or empty ticker")
                 return
-
-            if not validate_ticker(ticker):
-                st.markdown(f"""
-                <div class='ticker-error'>
-                ❌ Invalid ticker format: {ticker}<br>
-                Valid format: 1-10 letters/dots (e.g.: BRK.B)
-                </div>
-                """, unsafe_allow_html=True)
-                return
-
             if start_date >= end_date:
-                st.error("📅 End date must be after start date!")
+                st.error("📅 Start date must be before end date")
                 return
-
             try:
                 with st.spinner("🔍 Validating ticker..."):
-                    stock_info = yf.Ticker(ticker).info
-                    if not stock_info.get('regularMarketPrice'):
+                    info = yf.Ticker(ticker).info
+                    if not info.get('regularMarketPrice'):
                         raise ValueError("Invalid or delisted ticker")
-
-                with st.spinner("📡 Downloading data..."):
-                    df = safe_download(ticker, start_date, end_date)
-                    
-                    if len(df) < MIN_DATA_POINTS:
-                        raise ValueError(f"Only {len(df)} data points (minimum {MIN_DATA_POINTS} required)")
-                    
-                    st.session_state.data = df
-                    st.success(f"✅ Successfully loaded {ticker} data!")
-                    st.dataframe(df.head().style.format(precision=2), height=200)
-
+                df = safe_download(ticker, start_date, end_date)
+                if len(df) < MIN_DATA_POINTS:
+                    raise ValueError("Insufficient data points")
+                st.session_state.data = df
+                st.success("✅ Data loaded successfully")
+                st.dataframe(df.head())
             except Exception as e:
-                st.error(f"""
-                ❗ Failed to load {ticker} data!
-                📌 Reason: {str(e)}
-                🔍 Troubleshooting:
-                1. Verify ticker on [Yahoo Finance](https://finance.yahoo.com)
-                2. Check date range (min 3 months)
-                3. Try different ticker
-                4. Use CSV upload instead
-                """)
+                st.error(f"❗ Error: {str(e)}")
         else:
             if uploaded_file:
                 try:
                     df = pd.read_csv(uploaded_file)
                     if not {'Date', 'Close'}.issubset(df.columns):
-                        raise ValueError("CSV must contain 'Date' and 'Close' columns")
+                        raise ValueError("CSV must include 'Date' and 'Close'")
                     df['Date'] = pd.to_datetime(df['Date'])
                     st.session_state.data = df.sort_values('Date')
-                    st.success("✅ CSV data loaded successfully!")
+                    st.success("✅ CSV loaded successfully")
                 except Exception as e:
                     st.error(f"CSV Error: {str(e)}")
             else:
-                st.warning("⚠️ Please upload a CSV file")
+                st.warning("⚠️ Upload a valid CSV")
 
-    # Data preprocessing
     if st.session_state.data is not None:
         st.header("2. Data Preparation")
         df = st.session_state.data
-        
         if st.button("🧼 Clean Data"):
             with st.spinner("Processing..."):
-                initial_count = len(df)
+                original = len(df)
                 df_clean = df.dropna()
-                final_count = len(df_clean)
-                
-                if final_count == 0:
-                    st.error("🚨 All data removed during cleaning!")
-                    return
-                
                 st.session_state.data = df_clean
-                st.success(f"Removed {initial_count - final_count} rows with missing values")
-
+                st.success(f"Cleaned {original - len(df_clean)} rows")
         st.subheader("Data Statistics")
-        st.dataframe(df.describe().style.format(precision=2), height=300)
+        st.dataframe(df.describe())
 
-    # Feature engineering
     if st.session_state.data is not None and len(st.session_state.data) > 50:
         st.header("3. Feature Engineering")
-        
+        df = st.session_state.data
         if st.button("⚙️ Generate Features"):
-            with st.spinner("Creating technical indicators..."):
-                df = st.session_state.data
-                df['SMA_20'] = df['Close'].rolling(20).mean()
-                df['SMA_50'] = df['Close'].rolling(50).mean()
+            with st.spinner("Generating..."):
+                df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                df['SMA_50'] = df['Close'].rolling(window=50).mean()
                 df['RSI'] = compute_rsi(df['Close'])
-                df = df.dropna()
+                df.dropna(inplace=True)
                 st.session_state.data = df
-                
-                st.plotly_chart(px.line(df, x='Date', y=['Close', 'SMA_20', 'SMA_50'], 
-                                      title="Price and Moving Averages"))
+                st.success("✅ Features added")
 
-    # Model training
-    if st.session_state.data is not None and len(st.session_state.data) > 100:
         st.header("4. Model Training")
-        
-        if st.button("🤖 Train Model"):
-            df = st.session_state.data
-            X = df[['SMA_20', 'SMA_50', 'RSI']]
-            y = df['Close']
-            
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            X_train, X_test, y_train, y_test = train_test_split(
-                X_scaled, y, test_size=test_size, shuffle=False
-            )
-            
-            if model_type == "Linear Regression":
-                model = LinearRegression()
-            else:
-                model = RandomForestRegressor(n_estimators=100)
-            
-            with st.spinner("Training in progress..."):
+        if st.button("🚀 Train Model"):
+            with st.spinner("Training..."):
+                df = st.session_state.data
+                features = df[['SMA_20', 'SMA_50', 'RSI']]
+                target = df['Close']
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(features)
+                X_train, X_test, y_train, y_test = train_test_split(X_scaled, target, test_size=test_size)
+                
+                if model_type == "Linear Regression":
+                    model = LinearRegression()
+                else:
+                    model = RandomForestRegressor(n_estimators=100)
                 model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+                mse = mean_squared_error(y_test, y_pred)
+                r2 = r2_score(y_test, y_pred)
                 st.session_state.model = model
-                st.success("🎉 Model training completed!")
+                st.success(f"🎯 Model trained | MSE: {mse:.2f}, R²: {r2:.2f}")
 
-    # Model evaluation
-    if st.session_state.model is not None:
-        st.header("5. Model Evaluation")
-        
-        if st.button("📈 Evaluate Performance"):
+        st.header("5. Forecast Visualization")
+        if st.session_state.model:
             df = st.session_state.data
-            X = df[['SMA_20', 'SMA_50', 'RSI']]
-            y = df['Close']
-            
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            split_idx = int(len(X_scaled) * (1 - test_size))
-            X_test = X_scaled[split_idx:]
-            y_test = y[split_idx:]
-            
-            y_pred = st.session_state.model.predict(X_test)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("RMSE", f"{np.sqrt(mean_squared_error(y_test, y_pred)):.2f}")
-            with col2:
-                st.metric("R² Score", f"{r2_score(y_test, y_pred):.2f}")
-            
+            features = df[['SMA_20', 'SMA_50', 'RSI']]
+            X_scaled = StandardScaler().fit_transform(features)
+            df['Predicted'] = st.session_state.model.predict(X_scaled)
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=y_test.index, y=y_test, name='Actual'))
-            fig.add_trace(go.Scatter(x=y_test.index, y=y_pred, name='Predicted'))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], name='Actual'))
+            fig.add_trace(go.Scatter(x=df['Date'], y=df['Predicted'], name='Predicted'))
             st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
