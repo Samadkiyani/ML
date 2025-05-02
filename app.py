@@ -44,9 +44,8 @@ st.markdown("""
 MAX_RETRIES = 2
 BASE_DELAY = 8.0
 JITTER = 4.0
-BACKUP_TICKERS = ['AAPL', 'MSFT']
 MIN_DATA_POINTS = 10
-RATE_LIMIT_COOLDOWN = 600  # 10 minutes
+RATE_LIMIT_COOLDOWN = 600 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -120,7 +119,7 @@ def main():
         data_source = st.radio("Data Source:", ["Yahoo Finance", "Upload CSV"])
         
         if data_source == "Yahoo Finance":
-            ticker = st.text_input("Stock Ticker:", "AAPL").strip().upper()
+            ticker = st.text_input("Stock Ticker (e.g., TSLA, GOOGL):", "").strip().upper()
             start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
             end_date = st.date_input("End Date:", datetime.date.today())
         else:
@@ -137,12 +136,16 @@ def main():
     if st.button("🚀 Load Data"):
         try:
             if data_source == "Yahoo Finance":
+                if not ticker:
+                    st.error("⛔ Please enter a stock ticker!")
+                    return
+
                 if start_date > end_date:
                     st.error("⛔ Start date must be before end date!")
                     return
 
                 if not re.match(r"^[A-Za-z.-]{1,10}$", ticker):
-                    st.error("❌ Invalid ticker format!")
+                    st.error("❌ Invalid ticker format! Use only letters and dots (e.g., BRK.B)")
                     return
 
                 adjusted_end_date = end_date
@@ -152,61 +155,38 @@ def main():
                     ⚠️ Adjusted end date to {adjusted_end_date} (weekend)
                     </p>""", unsafe_allow_html=True)
 
-                current_ticker = ticker
-                all_tickers = [current_ticker] + BACKUP_TICKERS
-                df = pd.DataFrame()
-                failures = []
+                try:
+                    with st.spinner(f"🌐 Fetching {ticker} data..."):
+                        info = yf.Ticker(ticker).info
+                        if info.get('regularMarketPrice') is None:
+                            raise ValueError("Invalid or delisted ticker")
+                            
+                        listing_date = pd.to_datetime(
+                            info.get('firstTradeDateEpochUtc', pd.NaT), unit='s'
+                        )
+                        if pd.notna(listing_date) and start_date < listing_date.date():
+                            raise ValueError(f"Start date precedes {listing_date.date()}")
 
-                for t in all_tickers:
-                    try:
-                        with st.spinner(f"🌐 Attempting {t}..."):
-                            info = yf.Ticker(t).info
-                            listing_date = pd.to_datetime(
-                                info.get('firstTradeDateEpochUtc', pd.NaT), unit='s'
-                            )
-                            if pd.notna(listing_date) and start_date < listing_date.date():
-                                raise ValueError(f"Start date precedes {listing_date.date()}")
+                        df = safe_download(ticker, start_date, adjusted_end_date)
+                        
+                        if len(df) < MIN_DATA_POINTS:
+                            raise ValueError(f"Only {len(df)} data points - expand date range")
                             
-                            df = safe_download(t, start_date, adjusted_end_date)
-                            
-                            if len(df) < MIN_DATA_POINTS:
-                                raise ValueError(f"Only {len(df)} data points")
-                                
-                            current_ticker = t
-                            break
-                            
-                    except Exception as e:
-                        failures.append(f"{t}: {str(e)}")
-                        if "YFRateLimitError" in str(e):
-                            st.error("""
-                            🚨 Immediate Solutions:
-                            1. Switch to CSV upload
-                            2. Wait 15-20 minutes
-                            3. Try 1-month date range
-                            """)
-                            return
+                        st.session_state.current_ticker = ticker
+                        st.session_state.data = df.sort_values('Date')
+                        st.session_state.steps['loaded'] = True
+                        st.success("✅ Data loaded successfully!")
+                        st.dataframe(df.head().style.format("{:.2f}"), height=250)
 
-                if df.empty:
+                except Exception as e:
+                    st.error(f"❌ Failed to load {ticker}: {str(e)}")
                     st.markdown(f"""
-                    ❌ All tickers failed!
-                    <div class='error-list'>
-                    {'<br>'.join(failures[-3:])}
-                    </div>
-                    🔧 Solutions:
-                    1. Use CSV upload below
-                    2. Try after {RATE_LIMIT_COOLDOWN//60} minutes
-                    3. Reduce date range
-                    """, unsafe_allow_html=True)
-                    return
-
-                if current_ticker != ticker:
-                    st.warning(f"⚠️ Using backup ticker: {current_ticker}")
-                    st.session_state.current_ticker = current_ticker
-
-                st.session_state.data = df.sort_values('Date')
-                st.session_state.steps['loaded'] = True
-                st.success("✅ Data loaded successfully!")
-                st.dataframe(df.head().style.format("{:.2f}"), height=250)
+                    🔧 Solutions for {ticker}:
+                    1. Verify ticker on [Yahoo Finance](https://finance.yahoo.com)
+                    2. Adjust date range
+                    3. Check for corporate actions
+                    4. Try CSV upload instead
+                    """)
 
             else:
                 st.markdown("""
@@ -235,9 +215,9 @@ def main():
         except Exception as e:
             st.error(f"🚨 Critical Error: {str(e)}")
             st.markdown("""
-            🔧 Troubleshooting Guide:
-            1. Verify dates on [Yahoo Finance](https://finance.yahoo.com)
-            2. Try smaller date range (1-3 months)
+            🔧 General Troubleshooting:
+            1. Try different ticker
+            2. Reduce date range
             3. Check network connection
             4. Use CSV upload
             """)
