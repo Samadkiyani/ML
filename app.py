@@ -69,22 +69,19 @@ def safe_download(ticker, start_date, end_date):
             delay = (BASE_DELAY * (2 ** attempt)) + random.uniform(0, JITTER)
             with st.spinner(f"⏳ Strategic delay {delay:.1f}s..."):
                 time.sleep(delay)
-            headers = {
-                'User-Agent': random.choice(USER_AGENTS),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Referer': 'https://finance.yahoo.com/'
-            }
+
             df = yf.download(
                 ticker,
                 start=start_date - datetime.timedelta(days=3),
                 end=end_date + datetime.timedelta(days=3),
-                progress=False,
-                headers=headers
+                progress=False
             )
+
             if df.empty:
                 raise ValueError("Empty response from server")
+
             return df.loc[start_date:end_date].reset_index()
+
         except Exception as e:
             if "YFRateLimitError" in str(e) or "429" in str(e):
                 remaining_time = COOLDOWN_PERIOD - (attempt * 600)
@@ -111,7 +108,7 @@ def main():
     - Avoid rapid reloads
     - Use CSV for heavy data
     """)
-    
+
     if 'data' not in st.session_state:
         st.session_state.data = None
     if 'model' not in st.session_state:
@@ -201,7 +198,7 @@ def main():
                 scaler = StandardScaler()
                 X_scaled = scaler.fit_transform(features)
                 X_train, X_test, y_train, y_test = train_test_split(X_scaled, target, test_size=test_size)
-                
+
                 if model_type == "Linear Regression":
                     model = LinearRegression()
                 else:
