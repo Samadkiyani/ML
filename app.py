@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     body, .stApp {
-        background-image: url('https://media.istockphoto.com/id/1322288393/photo/businessman-using-tablet-analyzing-sales-data-and-economic-growth-graph-chart-business.jpg?b=1&s=170667a&w=0&k=20&c=UWG3eGk9MJVOacQNZVygd82eN4bRzcvLHeVx99b6BW8=');
+        background-image: url('https://static.vecteezy.com/system/resources/previews/022/144/287/large_2x/growth-strategy-business-graph-analysis-concept-on-finance-chart-data-diagram-3d-background-wallpaper-ai-generated-photo.jpg');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
