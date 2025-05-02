@@ -1,4 +1,4 @@
-# app.py - Complete Financial ML Platform with Dynamic Data Handling
+# app.py - Complete Financial ML Platform with Robust Date Handling
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -28,12 +28,13 @@ st.markdown("""
     .stDownloadButton>button {background-color: #4CAF50; color: white;}
     .stAlert {border-radius: 5px;}
     .sidebar .sidebar-content {background-color: #e8f4f8;}
+    .date-error {color: #dc3545; font-weight: bold;}
     .csv-guide {border-left: 3px solid #2a4a7c; padding-left: 15px;}
 </style>
 """, unsafe_allow_html=True)
 
 def compute_rsi(prices, window=14):
-    """Calculate Relative Strength Index (RSI)"""
+    """Calculate Relative Strength Index (RSI) with NaN handling"""
     delta = prices.diff()
     gain = (delta.where(delta > 0, 0)).fillna(0)
     loss = (-delta.where(delta < 0, 0)).fillna(0)
@@ -41,8 +42,26 @@ def compute_rsi(prices, window=14):
     avg_gain = gain.rolling(window, min_periods=1).mean()
     avg_loss = loss.rolling(window, min_periods=1).mean()
     
-    rs = avg_gain / avg_loss
+    rs = avg_gain / (avg_loss + 1e-10)  # Prevent division by zero
     return 100 - (100 / (1 + rs))
+
+def validate_dates(date_series):
+    """Check for valid dates and handle NaT values"""
+    invalid_dates = date_series.isna()
+    if invalid_dates.any():
+        st.markdown(f"<div class='date-error'>⚠️ Found {invalid_dates.sum()} invalid dates. These rows will be removed.</div>", 
+                    unsafe_allow_html=True)
+        return date_series[~invalid_dates]
+    return date_series
+
+def safe_date_format(date_obj, fmt="%Y-%m-%d"):
+    """Safely format dates handling NaT"""
+    if pd.isna(date_obj):
+        return "Invalid Date"
+    try:
+        return date_obj.strftime(fmt)
+    except AttributeError:
+        return str(date_obj)
 
 def main():
     st.title("📈 FinML Pro - Financial Machine Learning Platform")
@@ -74,7 +93,7 @@ def main():
         test_size = st.slider("Test Size Ratio:", 0.1, 0.5, 0.2)
         st.button("Reload App", on_click=lambda: st.session_state.clear())
 
-    # Step 1: Data Acquisition with Auto-Cleaning
+    # Step 1: Data Acquisition with Date Validation
     st.header("1. Data Acquisition")
     if uploaded_file:
         try:
@@ -87,17 +106,23 @@ def main():
                 st.error(f"❌ Missing columns: {', '.join(missing)}")
                 return
                 
-            # Clean numeric columns
+            # Clean and validate dates
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            original_count = len(df)
+            df = df[df['Date'].notna()]
+            df['Date'] = validate_dates(df['Date'])
+            
+            if len(df) < original_count:
+                st.warning(f"Removed {original_count - len(df)} rows with invalid dates")
+            
+            # Convert numeric columns
             numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-            df[numeric_cols] = df[numeric_cols].apply(
-                pd.to_numeric, errors='coerce'
-            )
+            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce')
             df = df.dropna(subset=numeric_cols)
             
-            df['Date'] = pd.to_datetime(df['Date'])
             st.session_state.data = df.sort_values('Date')
             st.session_state.steps['loaded'] = True
-            st.success("✅ CSV loaded successfully!")
+            st.success(f"✅ Successfully loaded {len(df)} valid records")
             
             if not df.empty:
                 st.dataframe(
@@ -176,12 +201,9 @@ def main():
                 df = st.session_state.data.copy()
                 
                 with st.spinner("Building financial features..."):
-                    # Rolling features with dynamic window handling
                     df['SMA_20'] = df['Close'].rolling(20, min_periods=1).mean()
                     df['SMA_50'] = df['Close'].rolling(50, min_periods=1).mean()
                     df['RSI'] = compute_rsi(df['Close'])
-                    
-                    # Auto-handle remaining NaNs
                     df = df.dropna().reset_index(drop=True)
                         
                     st.session_state.data = df
@@ -196,7 +218,7 @@ def main():
             except Exception as e:
                 st.error(f"🚨 Feature creation error: {str(e)}")
 
-    # Step 4: Intelligent Data Split
+    # Step 4: Intelligent Data Split with Safe Date Handling
     if st.session_state.steps['features_created']:
         st.header("4. Data Split")
         
@@ -212,7 +234,6 @@ def main():
                     scaler = StandardScaler()
                     X_scaled = scaler.fit_transform(X)
                     
-                    # Time-based split
                     split_idx = int(len(X_scaled) * (1 - test_size))
                     X_train, X_test = X_scaled[:split_idx], X_scaled[split_idx:]
                     y_train, y_test = y[:split_idx], y[split_idx:]
@@ -227,18 +248,29 @@ def main():
                     st.session_state.steps['split'] = True
                 
                 st.write("### Data Partition Visualization:")
-                split_df = pd.DataFrame({
-                    'Type': ['Training', 'Testing'],
-                    'Samples': [len(X_train), len(X_test)],
-                    'Time Period': [
-                        f"{df['Date'].iloc[0].date()} to {df['Date'].iloc[split_idx-1].date()}",
-                        f"{df['Date'].iloc[split_idx].date()} to {df['Date'].iloc[-1].date()}"
-                    ]
-                })
-                
-                fig = px.bar(split_df, x='Type', y='Samples', text='Time Period',
-                            color='Type', color_discrete_sequence=['#2a4a7c', '#3b6ea5'])
-                st.plotly_chart(fig, use_container_width=True)
+                try:
+                    train_start = safe_date_format(df['Date'].iloc[0])
+                    train_end = safe_date_format(df['Date'].iloc[split_idx-1])
+                    test_start = safe_date_format(df['Date'].iloc[split_idx])
+                    test_end = safe_date_format(df['Date'].iloc[-1])
+                    
+                    split_df = pd.DataFrame({
+                        'Type': ['Training', 'Testing'],
+                        'Samples': [len(X_train), len(X_test)],
+                        'Time Period': [
+                            f"{train_start} to {train_end}",
+                            f"{test_start} to {test_end}"
+                        ]
+                    })
+                    
+                    fig = px.bar(split_df, x='Type', y='Samples', text='Time Period',
+                                color='Type', color_discrete_sequence=['#2a4a7c', '#3b6ea5'])
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error("Error formatting dates in split visualization")
+                    st.write("Raw date values:")
+                    st.write(df[['Date']].tail())
 
             except Exception as e:
                 st.error(f"🚨 Splitting error: {str(e)}")
@@ -286,19 +318,29 @@ def main():
                             help="Average absolute prediction error")
                 
                 st.write("### Prediction Analysis:")
+                results = pd.DataFrame({
+                    'Actual': y_test,
+                    'Predicted': y_pred,
+                    'Date': st.session_state.data['Date'].iloc[-len(y_test):]
+                })
+                
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=y_test, y=y_pred, mode='markers',
-                                       marker=dict(color='#2a4a7c', size=8),
-                                       name='Predictions'))
-                fig.add_trace(go.Scatter(x=[min(y_test), max(y_test)], 
-                                       y=[min(y_test), max(y_test)],
-                                       mode='lines', 
-                                       line=dict(color='#4CAF50', dash='dash'),
-                                       name='Perfect Fit'))
+                fig.add_trace(go.Scatter(
+                    x=results['Date'],
+                    y=results['Actual'],
+                    name='Actual',
+                    line=dict(color='#2a4a7c')
+                ))
+                fig.add_trace(go.Scatter(
+                    x=results['Date'],
+                    y=results['Predicted'],
+                    name='Predicted',
+                    line=dict(color='#4CAF50')
+                ))
                 fig.update_layout(
-                    title="Actual vs Predicted Values",
-                    xaxis_title="Actual Prices",
-                    yaxis_title="Predicted Prices",
+                    title="Actual vs Predicted Prices Over Time",
+                    xaxis_title="Date",
+                    yaxis_title="Price",
                     height=600
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -316,11 +358,6 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
 
                 # Prediction download
-                results = pd.DataFrame({
-                    'Date': st.session_state.data['Date'].iloc[-len(y_test):],
-                    'Actual': y_test,
-                    'Predicted': y_pred
-                })
                 csv = results.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     "💾 Download Full Predictions", 
