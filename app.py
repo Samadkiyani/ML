@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     body, .stApp {
-        background-image: url('https://static.vecteezy.com/system/resources/previews/022/144/287/large_2x/growth-strategy-business-graph-analysis-concept-on-finance-chart-data-diagram-3d-background-wallpaper-ai-generated-photo.jpg');
+        background-image: url('https://png.pngtree.com/background/20230827/original/pngtree-d-rendering-of-a-glowing-digital-business-interface-showcasing-finance-innovation-picture-image_4843680.jpg');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
