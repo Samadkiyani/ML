@@ -1,11 +1,5 @@
-streamlit
-pandas
-numpy
-scikit-learn
-matplotlib
-plotly
-yfinance>=0.2.40
-python-dateutil
-pytz
-seaborn
-finnhub-python
+streamlit==1.35.0
+pandas==2.2.2
+numpy==1.26.4
+plotly==5.21.0
+scikit-learn==1.4.2
