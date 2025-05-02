@@ -46,7 +46,7 @@ BASE_DELAY = 8.0
 JITTER = 4.0
 BACKUP_TICKERS = ['AAPL', 'MSFT']
 MIN_DATA_POINTS = 10
-RATE_LIMIT_COOLDOWN = 600  # 10 minutes
+RATE_LIMIT_COOLDOWN = 600 
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
