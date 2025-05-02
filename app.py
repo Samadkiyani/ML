@@ -1,4 +1,4 @@
-# app.py - Financial ML Platform with Custom Stock Input
+# app.py - Financial ML Platform with Rate Limit Protection
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -33,18 +33,27 @@ st.markdown("""
     .stAlert {border-left: 3px solid #2a4a7c;}
     .ticker-error {color: #dc3545; font-weight: bold;}
     .date-warning {color: #ffc107; background-color: #fff3cd; padding: 10px; border-radius: 5px;}
+    .countdown {color: #e67e22; font-weight: bold; padding: 10px; border: 2px solid #e67e22; border-radius: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
 # Configuration
-MAX_RETRIES = 2
-BASE_DELAY = 5.0
-JITTER = 3.0
+MAX_RETRIES = 3
+BASE_DELAY = 8.0
+JITTER = 4.0
 MIN_DATA_POINTS = 30
+COOLDOWN_PERIOD = 1800  # 30 minutes in seconds
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
 ]
+PROXY_SERVERS = {  # Example proxies (replace with actual if available)
+    'http': 'http://user:pass@proxy1:port',
+    'https': 'http://user:pass@proxy1:port'
+}
 
 def validate_ticker(ticker):
     """Validate stock ticker format"""
@@ -64,19 +73,29 @@ def compute_rsi(prices, window=14):
     return 100 - (100 / (1 + rs))
 
 def safe_download(ticker, start_date, end_date):
-    """Robust data download with error handling"""
+    """Enhanced download function with rate limit protection"""
     for attempt in range(MAX_RETRIES):
         try:
-            delay = BASE_DELAY + random.uniform(0, JITTER)
-            with st.spinner(f"⏳ Safety delay {delay:.1f}s..."):
+            # Exponential backoff with jitter
+            delay = (BASE_DELAY * (2 ** attempt)) + random.uniform(0, JITTER)
+            with st.spinner(f"⏳ Strategic delay {delay:.1f}s..."):
                 time.sleep(delay)
+            
+            # Rotate headers and proxies
+            headers = {
+                'User-Agent': random.choice(USER_AGENTS),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': 'https://finance.yahoo.com/'
+            }
             
             df = yf.download(
                 ticker,
                 start=start_date - datetime.timedelta(days=3),
                 end=end_date + datetime.timedelta(days=3),
                 progress=False,
-                headers={'User-Agent': random.choice(USER_AGENTS)}
+                headers=headers,
+                # proxies=random.choice(PROXY_SERVERS) if PROXY_SERVERS else None
             )
             
             if df.empty:
@@ -85,13 +104,43 @@ def safe_download(ticker, start_date, end_date):
             return df.loc[start_date:end_date].reset_index()
             
         except Exception as e:
-            if attempt == MAX_RETRIES - 1:
-                raise
-            time.sleep(2 ** attempt)
+            if "YFRateLimitError" in str(e) or "429" in str(e):
+                remaining_time = COOLDOWN_PERIOD - (attempt * 600)
+                st.error(f"""
+                🔥 Critical Rate Limit Hit!
+                ⏲️ Recommended cooldown: {remaining_time//60} minutes
+                🛠️ Immediate Solutions:
+                1. Use VPN
+                2. Switch to CSV upload
+                3. Try later
+                """)
+                
+                # Interactive cooldown timer
+                with st.empty():
+                    for i in range(remaining_time, 0, -1):
+                        st.markdown(f"""
+                        <div class='countdown'>
+                        ⏳ Retry available in: {i//60:02d}:{i%60:02d}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        time.sleep(1)
+                    st.markdown("🟢 Ready to try again!")
+                continue
+            raise
+    raise ValueError(f"Failed after {MAX_RETRIES} attempts")
 
 def main():
-    st.title("📈 Custom Stock Analysis Platform")
+    st.title("📈 Robust Stock Analysis Platform")
     st.markdown("---")
+    
+    # Rate limit prevention tips
+    st.markdown("""
+    💡 **Rate Limit Prevention:**
+    - Use smaller date ranges (<6 months)
+    - Avoid frequent reloads
+    - Try during non-peak hours (9PM-5AM EST)
+    - Use CSV upload for intensive analysis
+    """)
     
     # Session state management
     if 'data' not in st.session_state:
@@ -163,6 +212,7 @@ def main():
                 1. Verify ticker on [Yahoo Finance](https://finance.yahoo.com)
                 2. Check date range (min 3 months)
                 3. Try different ticker
+                4. Use CSV upload instead
                 """)
         else:
             if uploaded_file:
