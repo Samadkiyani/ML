@@ -1,10 +1,7 @@
-# app.py - Complete Financial ML Platform with Finnhub
+# app.py - Complete Financial ML Platform with Kaggle Data
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
-import time
-import random
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
@@ -12,9 +9,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-import datetime
-import finnhub
-from finnhub.exceptions import FinnhubAPIException
 
 # Configure page
 st.set_page_config(
@@ -41,13 +35,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Configuration
-MAX_RETRIES = 2
-BASE_DELAY = 1.0
-BACKUP_TICKERS = ['AAPL', 'MSFT']
-MIN_DATA_POINTS = 10
-RATE_LIMIT_COOLDOWN = 60
-
 def compute_rsi(prices, window=14):
     """Calculate Relative Strength Index (RSI)"""
     delta = prices.diff()
@@ -60,50 +47,13 @@ def compute_rsi(prices, window=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def safe_download(ticker, start_date, end_date, api_key):
-    """Download stock data using Finnhub API with error handling"""
-    finnhub_client = finnhub.Client(api_key=api_key)
-    
-    try:
-        start_ts = int(pd.Timestamp(start_date).timestamp())
-        end_ts = int(pd.Timestamp(end_date).timestamp())
-        
-        data = finnhub_client.stock_candles(ticker, 'D', start_ts, end_ts)
-        
-        if data['s'] == 'no_data':
-            return pd.DataFrame()
-            
-        df = pd.DataFrame({
-            'Date': pd.to_datetime(data['t'], unit='s'),
-            'Open': data['o'],
-            'High': data['h'],
-            'Low': data['l'],
-            'Close': data['c'],
-            'Volume': data['v']
-        })
-        
-        df = df[(df['Date'] >= pd.to_datetime(start_date)) & 
-                (df['Date'] <= pd.to_datetime(end_date))]
-        
-        return df.sort_values('Date').reset_index(drop=True)
-        
-    except FinnhubAPIException as e:
-        if e.status_code == 429:
-            st.error(f"🔥 Rate limit exceeded! Waiting {RATE_LIMIT_COOLDOWN}s...")
-            time.sleep(RATE_LIMIT_COOLDOWN)
-            return safe_download(ticker, start_date, end_date, api_key)
-        raise
-    except Exception as e:
-        st.error(f"Download failed: {str(e)}")
-        return pd.DataFrame()
-
 def main():
     st.title("📈 FinML Pro - Financial Machine Learning Platform")
     st.markdown("---")
     
     # Session state initialization
     session_defaults = {
-        'data': None, 'model': None, 'current_ticker': None,
+        'data': None, 'model': None,
         'steps': {'loaded': False, 'processed': False, 
                  'features_created': False, 'split': False, 'trained': False},
         'predictions': None
@@ -114,15 +64,12 @@ def main():
     # Sidebar Configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
-        data_source = st.radio("Data Source:", ["Finnhub", "Upload CSV"])
+        st.markdown("""
+        **Dataset Source:**  
+        [Kaggle Finance Data](https://www.kaggle.com/datasets/nitindatta/finance-data)
+        """)
         
-        if data_source == "Finnhub":
-            finnhub_api_key = st.text_input("Finnhub API Key:", type="password")
-            ticker = st.text_input("Stock Ticker:", "AAPL").strip().upper()
-            start_date = st.date_input("Start Date:", datetime.date(2020, 1, 1))
-            end_date = st.date_input("End Date:", datetime.date.today())
-        else:
-            uploaded_file = st.file_uploader("Upload Dataset:", type=["csv"])
+        uploaded_file = st.file_uploader("Upload Dataset:", type=["csv"])
         
         st.markdown("---")
         st.header("🧠 Model Settings")
@@ -132,89 +79,33 @@ def main():
 
     # Step 1: Data Acquisition
     st.header("1. Data Acquisition")
-    if st.button("🚀 Load Data"):
+    if uploaded_file:
         try:
-            if data_source == "Finnhub":
-                if not finnhub_api_key:
-                    st.error("🔑 API Key Required!")
-                    return
-                    
-                if start_date > end_date:
-                    st.error("⛔ Start date must be before end date!")
-                    return
-
-                if not re.match(r"^[A-Za-z]{1,5}$", ticker):
-                    st.error("❌ Invalid ticker format!")
-                    return
-
-                current_ticker = ticker
-                all_tickers = [current_ticker] + BACKUP_TICKERS
-                df = pd.DataFrame()
-                failures = []
-
-                for t in all_tickers:
-                    try:
-                        with st.spinner(f"🌐 Fetching {t}..."):
-                            df = safe_download(t, start_date, end_date, finnhub_api_key)
-                            
-                            if df.empty or len(df) < MIN_DATA_POINTS:
-                                raise ValueError(f"Insufficient data ({len(df)} rows)")
-                                
-                            current_ticker = t
-                            break
-                            
-                    except Exception as e:
-                        failures.append(f"{t}: {str(e)}")
-                        continue
-
-                if df.empty:
-                    st.error(f"""
-                    ❌ All tickers failed!
-                    {' | '.join(failures[-3:])}
-                    """)
-                    return
-
-                if current_ticker != ticker:
-                    st.warning(f"⚠️ Using backup ticker: {current_ticker}")
-                    st.session_state.current_ticker = current_ticker
-
-                st.session_state.data = df
-                st.session_state.steps['loaded'] = True
-                st.success("✅ Data loaded successfully!")
-                st.dataframe(df.head().style.format("{:.2f}"), height=250)
-
-            else:
-                st.markdown("""
-                <div class='csv-guide'>
-                📁 CSV Requirements:
-                - Columns: <code>Date</code>, <code>Close</code>
-                - Date Format: YYYY-MM-DD
-                - Sample: <a href='https://bit.ly/finml-sample' target='_blank'>Download</a>
-                </div>
-                """, unsafe_allow_html=True)
+            df = pd.read_csv(uploaded_file)
+            
+            # Validate dataset structure
+            required_columns = {'Date', 'Open', 'High', 'Low', 'Close', 'Volume'}
+            if not required_columns.issubset(df.columns):
+                st.error("❌ Invalid dataset format! Required columns: Date, Open, High, Low, Close, Volume")
+                return
                 
-                if uploaded_file:
-                    try:
-                        df = pd.read_csv(uploaded_file)
-                        if not {'Date', 'Close'}.issubset(df.columns):
-                            raise ValueError("Missing required columns")
-                        df['Date'] = pd.to_datetime(df['Date'])
-                        st.session_state.data = df.sort_values('Date')
-                        st.session_state.steps['loaded'] = True
-                        st.success("✅ CSV loaded successfully!")
-                    except Exception as e:
-                        st.error(f"CSV Error: {str(e)}")
-                else:
-                    st.warning("⚠️ Please upload a CSV file")
-
+            df['Date'] = pd.to_datetime(df['Date'])
+            st.session_state.data = df.sort_values('Date')
+            st.session_state.steps['loaded'] = True
+            st.success("✅ CSV loaded successfully!")
+            st.dataframe(df.head().style.format("{:.2f}"), height=250)
+            
         except Exception as e:
-            st.error(f"🚨 Error: {str(e)}")
-            st.markdown("""
-            🔧 Troubleshooting:
-            1. Verify API key
-            2. Check https://finnhub.io/docs/api/rate-limits
-            3. Try smaller date range
-            """)
+            st.error(f"CSV Error: {str(e)}")
+    else:
+        st.markdown("""
+        <div class='csv-guide'>
+        📁 **How to Use:**
+        1. Download dataset from <a href="https://www.kaggle.com/datasets/nitindatta/finance-data" target="_blank">Kaggle</a>
+        2. Upload CSV file using the sidebar uploader
+        3. Ensure columns include: Date, Open, High, Low, Close, Volume
+        </div>
+        """, unsafe_allow_html=True)
 
     # Step 2: Data Preprocessing
     if st.session_state.steps['loaded']:
